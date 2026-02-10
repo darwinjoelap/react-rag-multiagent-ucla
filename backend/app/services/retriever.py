@@ -11,7 +11,7 @@ class RetrieverService:
         self,
         vector_store: Optional[VectorStoreService] = None,
         top_k: int = 5,
-        similarity_threshold: float = 0.7
+        similarity_threshold: float = 0.2
     ):
         """
         Inicializar servicio de recuperación
@@ -318,7 +318,7 @@ _retriever_instance = None
 
 def get_retriever(
     top_k: int = 5,
-    similarity_threshold: float = 0.7
+    similarity_threshold: float = 0.2
 ) -> RetrieverService:
     """Obtener instancia singleton del retriever"""
     global _retriever_instance

@@ -52,22 +52,20 @@ class VectorStoreService:
     def _get_or_create_collection(self):
         """Obtener colección existente o crear una nueva"""
         try:
-            # Intentar obtener colección existente
+            # PRIMERO: Intentar obtener por NOMBRE (no por ID)
             collection = self.client.get_collection(
-                name=self.collection_name,
-                embedding_function=None  # Usamos nuestros propios embeddings
+                name=self.collection_name
             )
-            logger.info(f"Colección '{self.collection_name}' cargada")
-        except Exception:
-            # Crear nueva colección si no existe
+            logger.info(f"Colección '{self.collection_name}' cargada con {collection.count()} docs")
+            return collection
+        except Exception as e:
+            # Si no existe, crear nueva
+            logger.info(f"Creando nueva colección '{self.collection_name}'")
             collection = self.client.create_collection(
                 name=self.collection_name,
-                embedding_function=None,
                 metadata={"description": "UCLA RAG Multiagent Knowledge Base"}
             )
-            logger.info(f"Colección '{self.collection_name}' creada")
-        
-        return collection
+            return collection
     
     def add_documents(
         self,
