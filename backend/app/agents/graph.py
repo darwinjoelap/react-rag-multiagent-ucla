@@ -38,17 +38,27 @@ def route_after_grader(state: GraphState) -> Literal["rewrite", "answer", "end"]
     """
     Decidir siguiente nodo después del grader
     
-    TEMPORAL: Siempre ir a answer si hay documentos
+    Lógica:
+    1. Si hay documentos → answer
+    2. Si retry_count >= 2 → answer (forzar aunque no haya docs)
+    3. Si no → rewrite
     """
     relevant_docs = state.get("retrieved_documents", [])
+    retry_count = state.get("retry_count", 0)
     
-    # Si hay CUALQUIER documento, ir a answer
+    # Si hay documentos, proceder a respuesta
     if len(relevant_docs) > 0:
         logger.info(f"Grader: {len(relevant_docs)} docs → answer")
         return "answer"
-    else:
-        logger.info("Grader: 0 docs → rewrite")
-        return "rewrite"
+    
+    # Si alcanzó límite de reintentos, forzar respuesta
+    if retry_count >= 2:
+        logger.warning(f"Grader: Límite de reintentos alcanzado ({retry_count}) → answer forzado")
+        return "answer"
+    
+    # Intentar reescribir
+    logger.info(f"Grader: 0 docs, retry {retry_count}/2 → rewrite")
+    return "rewrite"
 
 
 def should_continue_loop(state: GraphState) -> Literal["coordinator", "end"]:

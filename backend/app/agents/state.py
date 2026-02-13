@@ -26,7 +26,8 @@ class GraphState(TypedDict):
     # ============= ESTADO REACT =============
     iteration: int
     """Número de iteración actual (máximo 5 para evitar loops)"""
-    
+    retry_count: int
+    """Número de reintentos de reescritura (máximo 2)"""
     thought: Optional[str]
     """Pensamiento actual del agente (paso 1 de ReAct)"""
     
@@ -92,6 +93,7 @@ def create_initial_state(user_query: str) -> GraphState:
         
         # ReAct
         iteration=0,
+        retry_count=0,
         thought=None,
         action=None,
         action_input=None,

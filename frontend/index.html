@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAG Multiagent System - UCLA</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Mermaid.js para visualización de grafo -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    
+    <!-- Estilos personalizados -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        
+        <!-- Header -->
+        <header class="mb-8">
+            <h1 class="text-4xl font-bold text-gray-900 mb-2">
+                Sistema RAG Multiagente
+            </h1>
+            <p class="text-gray-600">
+                Universidad Centroccidental Lisandro Alvarado - Visualización en Tiempo Real
+            </p>
+        </header>
+
+        <!-- Input Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <form id="queryForm" class="flex gap-4">
+                <input 
+                    type="text" 
+                    id="queryInput" 
+                    placeholder="Escribe tu pregunta sobre inteligencia artificial..."
+                    class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    required
+                />
+                <button 
+                    type="submit" 
+                    id="submitBtn"
+                    class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                    Enviar
+                </button>
+            </form>
+            
+            <!-- Status -->
+            <div id="status" class="mt-4 hidden">
+                <div class="flex items-center gap-2 text-blue-600">
+                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+                    <span id="statusText">Procesando...</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Métricas (arriba, fila completa) -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">
+                Métricas del Sistema
+            </h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600 mb-1">Iteraciones</p>
+                    <p class="text-3xl font-bold text-blue-600" id="metricIterations">0</p>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600 mb-1">Documentos</p>
+                    <p class="text-3xl font-bold text-green-600" id="metricDocuments">0</p>
+                </div>
+                <div class="bg-purple-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600 mb-1">Tiempo (s)</p>
+                    <p class="text-3xl font-bold text-purple-600" id="metricTime">0</p>
+                </div>
+                <div class="bg-orange-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600 mb-1">Nodo Actual</p>
+                    <p class="text-lg font-bold text-orange-600 truncate" id="metricCurrentNode">-</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Grafo y Timeline (abajo, lado a lado) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            
+            <!-- Left: Graph Visualization -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-gray-900">
+                        Flujo del Grafo
+                    </h2>
+                    <button 
+                        id="exportGraphBtn"
+                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                    >
+                        Exportar SVG
+                    </button>
+                </div>
+                <div id="graphContainer" class="border border-gray-200 rounded-lg p-4 min-h-[400px] bg-gray-50">
+                    <div class="mermaid" id="mermaidGraph">
+                        graph LR
+                            START[Inicio] --> COORD[Coordinador]
+                            COORD --> SEARCH[Search]
+                            COORD --> ANSWER[Answer]
+                            SEARCH --> GRADER[Grader]
+                            GRADER --> ANSWER
+                            GRADER --> REWRITE[Rewriter]
+                            REWRITE --> SEARCH
+                            ANSWER --> END[Fin]
+                            
+                            style START fill:#e3f2fd
+                            style END fill:#e3f2fd
+                            style COORD fill:#fff3e0
+                            style SEARCH fill:#e8f5e9
+                            style GRADER fill:#fce4ec
+                            style REWRITE fill:#f3e5f5
+                            style ANSWER fill:#e0f2f1
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Timeline ReAct -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-gray-900">
+                        Timeline ReAct
+                    </h2>
+                    <button 
+                        id="exportTraceBtn"
+                        class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                    >
+                        Exportar JSON
+                    </button>
+                </div>
+                <div id="timeline" class="space-y-2 max-h-[400px] overflow-y-auto">
+                    <p class="text-gray-500 text-center py-8">
+                        Esperando eventos...
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Respuesta Final (fila completa abajo) -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">
+                Respuesta Final
+            </h2>
+            <div id="finalAnswer" class="prose max-w-none">
+                <p class="text-gray-500">
+                    La respuesta aparecerá aquí...
+                </p>
+            </div>
+            
+            <!-- Sources -->
+            <div id="sources" class="mt-6 hidden">
+                <h3 class="text-lg font-bold text-gray-900 mb-2">Fuentes:</h3>
+                <div id="sourcesList" class="space-y-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="app.js"></script>
+    <script>
+        // Inicializar Mermaid
+        mermaid.initialize({ 
+            startOnLoad: true,
+            theme: 'default',
+            flowchart: {
+                useMaxWidth: true,
+                htmlLabels: true,
+                curve: 'basis'
+            }
+        });
+    </script>
+</body>
+</html>

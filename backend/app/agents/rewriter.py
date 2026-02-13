@@ -128,6 +128,7 @@ class RewriterAgent:
                 "action_input": new_query,
                 "next_step": "search",
                 "observation": f"Query reescrita: {new_query}",
+                "retry_count": state.get("retry_count", 0) + 1,
                 **add_trace_step(
                     state,
                     agent="rewriter",
