@@ -174,3 +174,199 @@ def run_graph(user_query: str) -> GraphState:
     logger.info("Grafo ejecutado completamente")
     
     return final_state
+
+
+# ==================== STREAMING SUPPORT ====================
+
+import json
+from datetime import datetime
+from typing import AsyncGenerator
+
+
+async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
+    """
+    Ejecutar el grafo con streaming de eventos
+    
+    Emite eventos en formato Server-Sent Events (SSE) durante la ejecución:
+    - node_start: Cuando inicia un nodo
+    - node_end: Cuando termina un nodo
+    - thought: Pensamiento del coordinador
+    - documents_retrieved: Documentos recuperados
+    - grading_result: Resultado del grader
+    - rewrite: Query reescrita
+    - final_answer: Respuesta final
+    - error: Error durante procesamiento
+    - done: Procesamiento completado
+    
+    Args:
+        user_query: Pregunta del usuario
+        
+    Yields:
+        Eventos en formato SSE: "data: {json}\n\n"
+    """
+    from app.agents.state import create_initial_state
+    import time
+    
+    logger.info(f"🌊 Iniciando streaming para query: '{user_query}'")
+    start_time = time.time()
+    
+    try:
+        # Crear estado inicial
+        initial_state = create_initial_state(user_query)
+        
+        # Obtener grafo
+        graph = get_graph()
+        
+        # Variable para rastrear nodo actual
+        current_node = None
+        
+        # Streaming del grafo
+        async for event in graph.astream(initial_state):
+            try:
+                # El evento viene como dict con el nombre del nodo como key
+                node_name = list(event.keys())[0] if event else None
+                node_state = event.get(node_name, {}) if node_name else {}
+                
+                logger.debug(f"📦 Evento recibido: {node_name}")
+                
+                # Emitir evento de inicio de nodo (si cambió)
+                if node_name and node_name != current_node:
+                    current_node = node_name
+                    
+                    event_data = {
+                        "event_type": "node_start",
+                        "node_name": node_name,
+                        "iteration": node_state.get("iteration", 0),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(event_data)}\n\n"
+                
+                # Emitir eventos específicos según el nodo
+                
+                # COORDINATOR: Emitir pensamiento y acción
+                if node_name == "coordinator" and "thought" in node_state:
+                    thought_event = {
+                        "event_type": "thought",
+                        "thought": node_state.get("thought", ""),
+                        "action": node_state.get("action", ""),
+                        "iteration": node_state.get("iteration", 0),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(thought_event)}\n\n"
+                
+                # SEARCH: Emitir documentos recuperados
+                if node_name == "search" and "retrieved_documents" in node_state:
+                    docs = node_state.get("retrieved_documents", [])
+                    sources = list(set([
+                        doc.get("metadata", {}).get("source", "unknown").split("\\")[-1] 
+                        for doc in docs
+                    ]))
+                    
+                    docs_event = {
+                        "event_type": "documents_retrieved",
+                        "document_count": len(docs),
+                        "sources": sources,
+                        "iteration": node_state.get("iteration", 0),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(docs_event)}\n\n"
+                
+                # GRADER: Emitir resultado de evaluación
+                if node_name == "grader" and "retrieved_documents" in node_state:
+                    docs = node_state.get("retrieved_documents", [])
+                    total = len(docs)
+                    
+                    grading_event = {
+                        "event_type": "grading_result",
+                        "relevant_count": total,  # Todos se consideran relevantes por ahora
+                        "total_count": total,
+                        "decision": "proceed" if total > 0 else "rewrite",
+                        "iteration": node_state.get("iteration", 0),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(grading_event)}\n\n"
+                
+                # REWRITER: Emitir query reescrita
+                if node_name == "rewriter" and "rewritten_query" in node_state:
+                    rewrite_event = {
+                        "event_type": "rewrite",
+                        "original_query": user_query,
+                        "rewritten_query": node_state.get("rewritten_query", ""),
+                        "iteration": node_state.get("iteration", 0),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(rewrite_event)}\n\n"
+                
+                # ANSWER: Emitir respuesta final
+                if node_name == "answer" and "final_answer" in node_state:
+                    # Formatear fuentes
+                    sources = []
+                    for doc in node_state.get("retrieved_documents", []):
+                        sources.append({
+                            "document": doc.get("document", "")[:200] + "...",
+                            "source": doc.get("metadata", {}).get("source", "unknown").split("\\")[-1],
+                            "similarity": round(doc.get("similarity", 0.0), 4)
+                        })
+                    
+                    answer_event = {
+                        "event_type": "final_answer",
+                        "answer": node_state.get("final_answer", ""),
+                        "sources": sources,
+                        "total_iterations": node_state.get("iteration", 0),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(answer_event)}\n\n"
+                
+                # Emitir evento de fin de nodo
+                if node_name:
+                    end_event = {
+                        "event_type": "node_end",
+                        "node_name": node_name,
+                        "iteration": node_state.get("iteration", 0),
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    yield f"data: {json.dumps(end_event)}\n\n"
+                    
+            except Exception as e:
+                logger.error(f"❌ Error procesando evento de nodo: {str(e)}")
+                error_event = {
+                    "event_type": "error",
+                    "error_message": str(e),
+                    "node_name": node_name,
+                    "timestamp": datetime.now().isoformat()
+                }
+                yield f"data: {json.dumps(error_event)}\n\n"
+        
+        # Emitir evento de finalización
+        elapsed_time = time.time() - start_time
+        done_event = {
+            "event_type": "done",
+            "success": True,
+            "total_time_seconds": round(elapsed_time, 2),
+            "timestamp": datetime.now().isoformat()
+        }
+        yield f"data: {json.dumps(done_event)}\n\n"
+        
+        logger.info(f"✅ Streaming completado en {elapsed_time:.2f}s")
+        
+    except Exception as e:
+        logger.error(f"❌ Error fatal en streaming: {str(e)}", exc_info=True)
+        
+        # Emitir evento de error fatal
+        error_event = {
+            "event_type": "error",
+            "error_message": f"Error fatal: {str(e)}",
+            "node_name": None,
+            "timestamp": datetime.now().isoformat()
+        }
+        yield f"data: {json.dumps(error_event)}\n\n"
+        
+        # Emitir done con error
+        elapsed_time = time.time() - start_time
+        done_event = {
+            "event_type": "done",
+            "success": False,
+            "total_time_seconds": round(elapsed_time, 2),
+            "timestamp": datetime.now().isoformat()
+        }
+        yield f"data: {json.dumps(done_event)}\n\n"

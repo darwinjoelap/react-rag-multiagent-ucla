@@ -167,3 +167,61 @@ async def list_conversations():
         })
     
     return result
+
+# ==================== STREAMING ENDPOINT ====================
+
+from fastapi.responses import StreamingResponse
+from app.agents.graph import stream_graph
+
+
+@router.post("/stream", status_code=status.HTTP_200_OK)
+async def chat_stream(request: ChatRequest):
+    """
+    Endpoint de chat con streaming en tiempo real
+    
+    Emite eventos Server-Sent Events (SSE) durante el procesamiento:
+    - Pensamiento del coordinador (ReAct)
+    - Documentos recuperados
+    - Evaluación del grader
+    - Query reescrita (si aplica)
+    - Respuesta final
+    
+    **Uso desde frontend:**
+```javascript
+    const eventSource = new EventSource('/api/chat/stream', {
+        method: 'POST',
+        body: JSON.stringify({ message: "¿Qué es IA?" })
+    });
+    
+    eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log(data.event_type, data);
+    };
+```
+    
+    - **message**: Pregunta o mensaje del usuario (requerido)
+    - **conversation_id**: ID de conversación existente (opcional, no usado en streaming)
+    
+    Returns:
+    - Stream de eventos en formato SSE
+    """
+    try:
+        logger.info(f"🌊 Iniciando streaming para: {request.message[:50]}...")
+        
+        # Retornar streaming response
+        return StreamingResponse(
+            stream_graph(request.message),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # Disable nginx buffering
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error iniciando streaming: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error iniciando streaming: {str(e)}"
+        )
