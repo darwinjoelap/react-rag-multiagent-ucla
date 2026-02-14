@@ -9,7 +9,7 @@ de encontrar información útil.
 import logging
 from typing import Dict
 from langchain_ollama import OllamaLLM
-from app.agents.state import GraphState, add_trace_step
+from app.agents.state import GraphState, add_trace_step, increment_retry  # ← AGREGADO increment_retry
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -112,37 +112,61 @@ class RewriterAgent:
         Returns:
             Updates del estado con nueva query
         """
-        logger.info("Rewriter ejecutando - Reescribiendo consulta")
+        # ========== MODIFICADO: Log del retry_count actual ==========
+        current_retry = state.get("retry_count", 0)
+        logger.info(f"Rewriter ejecutando - Retry actual: {current_retry}")
+        # =============================================================
         
         try:
-            original_query = state["user_query"]
+            original_query = state.get("user_query", "")
             previous_action_input = state.get("action_input", original_query)
+            
+            # ========== MODIFICADO: Verificar límite antes de reescribir ==========
+            if current_retry >= 2:
+                logger.warning(f"⚠️ Rewriter: Límite de reintentos alcanzado ({current_retry}). Forzando respuesta.")
+                return {
+                    "action": "answer",
+                    "action_input": f"No encontré documentos específicos, pero puedo responder sobre: {original_query}",
+                    "next_step": "answer",
+                    "observation": "Límite de reintentos alcanzado",
+                    **add_trace_step(
+                        state,
+                        agent="rewriter",
+                        thought="Límite de reintentos alcanzado",
+                        action="answer",
+                        observation="Forzando respuesta final"
+                    )
+                }
+            # =======================================================================
             
             # Reescribir query
             new_query = self.rewrite_query(original_query, previous_action_input)
             
             thought = f"Query anterior no dio resultados relevantes. Reescribiendo: '{previous_action_input}' → '{new_query}'"
             
+            # ========== MODIFICADO: Usar increment_retry() ==========
             return {
                 "action": "search",
                 "action_input": new_query,
                 "next_step": "search",
                 "observation": f"Query reescrita: {new_query}",
-                "retry_count": state.get("retry_count", 0) + 1,
+                **increment_retry(state),  # ← USAR FUNCIÓN DEL STATE
                 **add_trace_step(
                     state,
                     agent="rewriter",
                     thought=thought,
                     action="rewrite",
-                    observation=f"Nueva query: {new_query}"
+                    observation=f"Nueva query: {new_query} | Retry: {current_retry + 1}"
                 )
             }
+            # =========================================================
             
         except Exception as e:
             logger.error(f"Error en rewriter: {str(e)}")
             # Si falla, continuar con respuesta usando lo que hay
             return {
                 "error": f"Error en rewriter: {str(e)}",
+                "action": "answer",
                 "next_step": "answer",
                 **add_trace_step(
                     state,

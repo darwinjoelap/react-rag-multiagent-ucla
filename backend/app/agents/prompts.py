@@ -7,6 +7,8 @@ Estructura:
 - Few-shot: Ejemplos que guían el comportamiento
 """
 
+from app.agents.state import get_conversation_context  # ← NUEVO: Import para multi-turno
+
 # ==============================================================================
 # COORDINADOR (AGENT ROUTER)
 # ==============================================================================
@@ -37,21 +39,12 @@ Responder directamente sin buscar más información.
 
 **Generas:** Respuesta completa al usuario
 
-## 3. clarify
-Solicitar más información al usuario.
-**Usar cuando:**
-- Consulta ambigua o muy vaga
-- Falta contexto esencial para responder bien
-- Múltiples interpretaciones posibles
-
-**Generas:** Pregunta específica para obtener claridad
-
 # FORMATO DE RESPUESTA (ReAct)
 
 SIEMPRE responde en este formato exacto:
 ```
 Thought: [Tu análisis de la situación en 1-2 líneas]
-Action: [search | answer | clarify]
+Action: [search | answer]
 Action Input: [contenido específico según la acción]
 ```
 
@@ -60,9 +53,10 @@ Action Input: [contenido específico según la acción]
 1. **Una acción por turno** - No combines múltiples acciones
 2. **Queries en español** - Todas las búsquedas deben ser en español
 3. **Sé específico** - Queries de búsqueda deben ser precisas y relevantes
-4. **No inventes** - Si no sabes, busca o pide aclaración
+4. **No inventes** - Si no sabes, busca
 5. **Máximo 5 iteraciones** - Sé eficiente, no busques indefinidamente
 6. **Usa contexto previo** - Revisa documentos ya recuperados antes de buscar más
+7. **IMPORTANTE - CONTEXTO MULTI-TURNO:** Si el usuario usa palabras como "eso", "aquello", "sí", "no", o hace preguntas de seguimiento, revisa el HISTORIAL para entender a qué se refiere
 
 # CONTEXTO ACTUAL
 - Iteración: {iteration}/5
@@ -91,26 +85,46 @@ Action Input: ¡Hola! Estoy aquí para ayudarte a encontrar información en los 
 
 ---
 
-## Ejemplo 3: Consulta vaga
-**Usuario:** "Explícame eso"
+## Ejemplo 3: Pregunta de seguimiento (MULTI-TURNO)
+**Historial:**
+- Usuario: "¿Qué es machine learning?"
+- Asistente: "El machine learning es un subcampo de la IA..."
 
-Thought: La consulta es demasiado vaga - no sé a qué se refiere "eso". Necesito contexto.
-Action: clarify
-Action Input: ¿A qué tema específico te refieres? ¿Podrías darme más detalles sobre lo que deseas que explique?
+**Usuario actual:** "¿Y eso es lo mismo que deep learning?"
 
----
-
-## Ejemplo 4: Pregunta de seguimiento
-**Usuario:** "¿Y cómo se relaciona con deep learning?"
-**Contexto:** Conversación previa sobre machine learning
-
-Thought: Usuario hace seguimiento sobre la relación ML-DL. Debo buscar información específica sobre esta conexión.
+Thought: Usuario pregunta sobre la relación entre ML (del mensaje anterior) y DL. Debo buscar información sobre esta comparación.
 Action: search
-Action Input: machine learning deep learning relación diferencias conexión
+Action Input: machine learning deep learning relación diferencias comparación
 
 ---
 
-## Ejemplo 5: Respuesta con contexto suficiente
+## Ejemplo 4: Respuesta corta con contexto (MULTI-TURNO)
+**Historial:**
+- Usuario: "¿La IA puede aprender sola?"
+- Asistente: "Sí, mediante técnicas de aprendizaje automático..."
+
+**Usuario actual:** "Sí"
+
+Thought: Usuario confirma con "sí" su interés en el tema. Debo profundizar en el aprendizaje automático que mencioné.
+Action: search
+Action Input: machine learning aprendizaje automático autónomo técnicas
+
+---
+
+## Ejemplo 5: Referencia a mensaje anterior (MULTI-TURNO)
+**Historial:**
+- Usuario: "¿Qué son las redes neuronales?"
+- Asistente: "Las redes neuronales son modelos inspirados en el cerebro..."
+
+**Usuario actual:** "¿Cómo funciona eso?"
+
+Thought: "Eso" se refiere a las redes neuronales del mensaje anterior. Debo buscar información sobre su funcionamiento.
+Action: search
+Action Input: redes neuronales funcionamiento arquitectura proceso
+
+---
+
+## Ejemplo 6: Respuesta con contexto suficiente
 **Usuario:** "Resume lo que encontraste"
 **Contexto:** Ya hay 5 documentos sobre transformers recuperados
 
@@ -120,7 +134,7 @@ Action Input: Basándome en los documentos, los transformers son arquitecturas d
 
 ---
 
-## Ejemplo 6: Búsqueda con múltiples conceptos
+## Ejemplo 7: Búsqueda con múltiples conceptos
 **Usuario:** "Compara supervised learning vs unsupervised learning"
 
 Thought: Necesito información específica sobre ambos paradigmas de aprendizaje para hacer una comparación precisa.
@@ -129,21 +143,12 @@ Action Input: supervised learning unsupervised learning diferencias comparación
 
 ---
 
-## Ejemplo 7: Pregunta sobre disponibilidad
+## Ejemplo 8: Búsqueda de disponibilidad
 **Usuario:** "¿Tienes información sobre reinforcement learning?"
 
 Thought: Usuario pregunta si tengo información disponible. Debo buscar para verificar qué documentos existen.
 Action: search
 Action Input: reinforcement learning aprendizaje por refuerzo
-
----
-
-## Ejemplo 8: Aclaración de alcance
-**Usuario:** "Dame todo sobre IA"
-
-Thought: Petición demasiado amplia. "Todo sobre IA" es excesivamente general. Debo pedir especificidad.
-Action: clarify
-Action Input: La inteligencia artificial es un campo muy amplio. ¿Qué aspecto específico te interesa? Por ejemplo: machine learning, visión computacional, procesamiento de lenguaje natural, aplicaciones, historia, etc.
 """
 
 def format_coordinator_prompt(state: dict) -> str:
@@ -158,8 +163,20 @@ def format_coordinator_prompt(state: dict) -> str:
     """
     # Extraer información del estado
     num_docs = len(state.get("retrieved_documents", []))
-    has_history = "Sí" if len(state.get("conversation_history", [])) > 1 else "No"
     iteration = state.get("iteration", 0)
+    
+    # ========== NUEVO: SOPORTE MULTI-TURNO ==========
+    # Obtener historial de conversación usando la función del state
+    conversation_history_text = ""
+    messages = state.get("messages", [])
+    
+    if len(messages) > 1:  # Hay conversación previa
+        conversation_history_text = "\n\n## 💬 HISTORIAL DE LA CONVERSACIÓN (últimos 5 mensajes)\n\n"
+        conversation_history_text += get_conversation_context(state, last_n=5)
+        has_history = "Sí"
+    else:
+        has_history = "No"
+    # ================================================
     
     # Formatear prompt del sistema
     system_prompt = COORDINATOR_SYSTEM_PROMPT.format(
@@ -168,20 +185,10 @@ def format_coordinator_prompt(state: dict) -> str:
         has_history=has_history
     )
     
-    # Construir contexto de conversación reciente
-    conversation_context = ""
-    history = state.get("conversation_history", [])
-    if len(history) > 1:  # Más que solo la consulta actual
-        conversation_context = "\n\n## HISTORIAL RECIENTE\n"
-        for msg in history[-4:]:  # Últimos 4 mensajes
-            role = "USUARIO" if msg["role"] == "user" else "ASISTENTE"
-            content = msg["content"]
-            conversation_context += f"**{role}:** {content}\n"
-    
     # Construir resumen de documentos disponibles
     docs_summary = ""
     if num_docs > 0:
-        docs_summary = f"\n\n## DOCUMENTOS EN CONTEXTO\nActualmente tienes {num_docs} documentos recuperados de búsquedas previas.\n"
+        docs_summary = f"\n\n## 📚 DOCUMENTOS EN CONTEXTO\nActualmente tienes {num_docs} documentos recuperados de búsquedas previas.\n"
         
         # Listar fuentes únicas
         sources = set()
@@ -203,18 +210,102 @@ def format_coordinator_prompt(state: dict) -> str:
     full_prompt = f"""{system_prompt}
 
 {COORDINATOR_FEW_SHOT_EXAMPLES}
-{conversation_context}
+{conversation_history_text}
 {docs_summary}
 {iteration_warning}
 
-# CONSULTA ACTUAL DEL USUARIO
-**Usuario:** {state.get("user_query", "")}
+# 🎯 CONSULTA ACTUAL DEL USUARIO
+**Usuario:** {state.get("current_query", "")}
 
 # TU RESPUESTA
 Analiza y responde en formato ReAct:
 """
     
     return full_prompt
+
+
+# ==============================================================================
+# ANSWER NODE - NUEVO PROMPT CON MULTI-TURNO
+# ==============================================================================
+
+def format_answer_prompt(state: dict) -> str:
+    """
+    Formatear prompt del nodo answer con contexto conversacional
+    
+    Args:
+        state: Estado actual del grafo (GraphState)
+        
+    Returns:
+        Prompt completo para generar la respuesta final
+    """
+    
+    # Obtener historial de conversación (últimos 3 turnos)
+    conversation_history_text = ""
+    messages = state.get("messages", [])
+    
+    if len(messages) > 1:
+        conversation_history_text = "## 💬 CONTEXTO DE LA CONVERSACIÓN\n\n"
+        conversation_history_text += get_conversation_context(state, last_n=3)
+        conversation_history_text += "\n"
+    
+    # Consulta actual
+    current_query = state.get("current_query", "")
+    
+    # Documentos recuperados
+    docs = state.get("retrieved_documents", [])
+    
+    # Formatear contexto de documentos
+    context = ""
+    if docs:
+        context = "## 📚 DOCUMENTOS RELEVANTES\n\n"
+        for i, doc in enumerate(docs[:5], 1):
+            doc_content = doc.get("document", "")
+            source = doc.get("metadata", {}).get("source", "Desconocido")
+            similarity = doc.get("similarity", 0.0)
+            
+            context += f"**[Documento {i}]** (Fuente: {source} | Similitud: {similarity:.2%})\n"
+            context += f"{doc_content[:500]}...\n\n"
+    else:
+        context = "## ℹ️ INFORMACIÓN\nNo se encontraron documentos relevantes en la base de conocimiento.\n\n"
+    
+    # Construir prompt
+    prompt = f"""Eres un asistente experto en inteligencia artificial y análisis de documentos académicos.
+
+{conversation_history_text}
+
+{context}
+
+## 🎯 CONSULTA ACTUAL
+**Usuario:** "{current_query}"
+
+## 📋 INSTRUCCIONES
+
+1. **CONTEXTO MULTI-TURNO:** 
+   - Si el usuario usa "sí", "no", "eso", "aquello" u otras referencias, consulta el HISTORIAL para entender a qué se refiere
+   - Si es una pregunta de seguimiento ("¿y eso qué es?", "¿cómo funciona?"), usa el contexto de mensajes anteriores
+
+2. **USO DE DOCUMENTOS:**
+   - Si hay documentos relevantes, úsalos para fundamentar tu respuesta
+   - Cita las fuentes cuando uses información de los documentos
+   - Si no hay documentos pero tienes conocimiento general, puedes usarlo
+
+3. **ESTILO DE RESPUESTA:**
+   - Sé conciso pero completo
+   - Usa un lenguaje claro y profesional
+   - Estructura la información de forma lógica
+   - Si el usuario pide aclaración sobre algo anterior, revisa el historial
+
+4. **FORMATO:**
+   - Responde SOLO con el texto de la respuesta
+   - NO incluyas "Thought:", "Action:", ni otros metadatos
+   - NO uses markdown extremo, mantén formato simple
+
+## ✍️ TU RESPUESTA
+
+Responde a la consulta del usuario considerando todo el contexto disponible:
+"""
+    
+    return prompt
 
 
 # ==============================================================================
@@ -263,8 +354,10 @@ def parse_react_response(response: str) -> dict:
             result[current_field] += " " + line
     
     # Validar que la acción sea válida
-    valid_actions = ["search", "answer", "clarify"]
+    valid_actions = ["search", "answer"]  # ← MODIFICADO: Removido "clarify"
     if result["action"] not in valid_actions:
-        raise ValueError(f"Acción inválida: {result['action']}. Debe ser una de: {valid_actions}")
+        # Si la acción es inválida, forzar a "search" por defecto
+        print(f"⚠️ Acción inválida detectada: {result['action']}. Usando 'search' por defecto.")
+        result["action"] = "search"
     
     return result

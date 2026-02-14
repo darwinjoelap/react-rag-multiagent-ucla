@@ -6,7 +6,8 @@ en un flujo condicional que implementa el patrón ReAct.
 """
 
 import logging
-from typing import Literal
+import asyncio
+from typing import Literal, List, Dict, Optional  # ← AGREGADO List, Dict, Optional
 from langgraph.graph import StateGraph, END
 from app.agents.state import GraphState, should_continue_graph
 from app.agents.coordinator import coordinator_node
@@ -193,7 +194,10 @@ from datetime import datetime
 from typing import AsyncGenerator
 
 
-async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
+async def stream_graph(
+    user_query: str,
+    conversation_history: Optional[List[Dict]] = None  # ← NUEVO PARÁMETRO
+) -> AsyncGenerator[str, None]:
     """
     Ejecutar el grafo con streaming de eventos
     
@@ -210,6 +214,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
     
     Args:
         user_query: Pregunta del usuario
+        conversation_history: Historial previo de la conversación (opcional)
         
     Yields:
         Eventos en formato SSE: "data: {json}\n\n"
@@ -218,11 +223,23 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
     import time
     
     logger.info(f"🌊 Iniciando streaming para query: '{user_query}'")
+    
+    # ========== NUEVO: LOG DE HISTORIAL ==========
+    if conversation_history:
+        logger.info(f"📜 Historial recibido: {len(conversation_history)} mensajes")
+    else:
+        logger.info("📜 Sin historial previo (primera consulta)")
+    # ==============================================
+    
     start_time = time.time()
     
     try:
-        # Crear estado inicial
-        initial_state = create_initial_state(user_query)
+        # ========== MODIFICADO: Crear estado inicial con historial ==========
+        initial_state = create_initial_state(
+            user_query,
+            conversation_history=conversation_history  # ← PASAR HISTORIAL
+        )
+        # ====================================================================
         
         # Obtener grafo
         graph = get_graph()
@@ -250,6 +267,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
                         "timestamp": datetime.now().isoformat()
                     }
                     yield f"data: {json.dumps(event_data)}\n\n"
+                    await asyncio.sleep(0)  # Forzar flush
                 
                 # Emitir eventos específicos según el nodo
                 
@@ -263,6 +281,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
                         "timestamp": datetime.now().isoformat()
                     }
                     yield f"data: {json.dumps(thought_event)}\n\n"
+                    await asyncio.sleep(0)  # Forzar flush
                 
                 # SEARCH: Emitir documentos recuperados
                 if node_name == "search" and "retrieved_documents" in node_state:
@@ -280,6 +299,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
                         "timestamp": datetime.now().isoformat()
                     }
                     yield f"data: {json.dumps(docs_event)}\n\n"
+                    await asyncio.sleep(0)  # Forzar flush
                 
                 # GRADER: Emitir resultado de evaluación
                 if node_name == "grader" and "retrieved_documents" in node_state:
@@ -295,6 +315,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
                         "timestamp": datetime.now().isoformat()
                     }
                     yield f"data: {json.dumps(grading_event)}\n\n"
+                    await asyncio.sleep(0)  # Forzar flush
                 
                 # REWRITER: Emitir query reescrita
                 if node_name == "rewriter" and "rewritten_query" in node_state:
@@ -306,6 +327,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
                         "timestamp": datetime.now().isoformat()
                     }
                     yield f"data: {json.dumps(rewrite_event)}\n\n"
+                    await asyncio.sleep(0)  # Forzar flush
                 
                 # ANSWER: Emitir respuesta final
                 if node_name == "answer" and "final_answer" in node_state:
@@ -326,6 +348,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
                         "timestamp": datetime.now().isoformat()
                     }
                     yield f"data: {json.dumps(answer_event)}\n\n"
+                    await asyncio.sleep(0)  # Forzar flush
                 
                 # Emitir evento de fin de nodo
                 if node_name:
@@ -336,6 +359,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
                         "timestamp": datetime.now().isoformat()
                     }
                     yield f"data: {json.dumps(end_event)}\n\n"
+                    await asyncio.sleep(0)  # Forzar flush
                     
             except Exception as e:
                 logger.error(f"❌ Error procesando evento de nodo: {str(e)}")
@@ -346,6 +370,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
                     "timestamp": datetime.now().isoformat()
                 }
                 yield f"data: {json.dumps(error_event)}\n\n"
+                await asyncio.sleep(0)  # Forzar flush
         
         # Emitir evento de finalización
         elapsed_time = time.time() - start_time
@@ -356,6 +381,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
             "timestamp": datetime.now().isoformat()
         }
         yield f"data: {json.dumps(done_event)}\n\n"
+        await asyncio.sleep(0)  # Forzar flush final
         
         logger.info(f"✅ Streaming completado en {elapsed_time:.2f}s")
         
@@ -370,6 +396,7 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
             "timestamp": datetime.now().isoformat()
         }
         yield f"data: {json.dumps(error_event)}\n\n"
+        await asyncio.sleep(0)
         
         # Emitir done con error
         elapsed_time = time.time() - start_time
@@ -380,3 +407,4 @@ async def stream_graph(user_query: str) -> AsyncGenerator[str, None]:
             "timestamp": datetime.now().isoformat()
         }
         yield f"data: {json.dumps(done_event)}\n\n"
+        await asyncio.sleep(0)

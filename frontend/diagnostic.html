@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnóstico de Streaming - RAG Multiagente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-6">🔍 Diagnóstico de Streaming</h1>
+        
+        <div class="bg-gray-800 rounded-lg p-4 mb-4">
+            <h2 class="text-xl font-bold mb-3">Enviar Query</h2>
+            <div class="flex gap-3">
+                <input 
+                    type="text" 
+                    id="queryInput" 
+                    placeholder="¿Qué es inteligencia artificial?"
+                    class="flex-1 px-4 py-2 bg-gray-700 rounded text-white"
+                    value="¿Qué es inteligencia artificial?"
+                />
+                <button 
+                    id="sendBtn"
+                    class="px-6 py-2 bg-blue-600 rounded hover:bg-blue-700"
+                >
+                    Enviar
+                </button>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <!-- Console de eventos -->
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h2 class="text-xl font-bold mb-3">📡 Eventos Recibidos</h2>
+                <div id="eventsLog" class="bg-black p-3 rounded h-96 overflow-y-auto font-mono text-xs">
+                    <p class="text-gray-500">Esperando eventos...</p>
+                </div>
+            </div>
+
+            <!-- Timeline visual -->
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h2 class="text-xl font-bold mb-3">📜 Timeline Visual</h2>
+                <div id="timeline" class="bg-black p-3 rounded h-96 overflow-y-auto">
+                    <p class="text-gray-500">Esperando eventos...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Estadísticas -->
+        <div class="bg-gray-800 rounded-lg p-4 mt-4">
+            <h2 class="text-xl font-bold mb-3">📊 Estadísticas</h2>
+            <div class="grid grid-cols-4 gap-4 text-center">
+                <div>
+                    <p class="text-gray-400 text-sm">Chunks Recibidos</p>
+                    <p id="chunkCount" class="text-3xl font-bold text-blue-400">0</p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm">Eventos Parseados</p>
+                    <p id="eventCount" class="text-3xl font-bold text-green-400">0</p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm">Tiempo Transcurrido</p>
+                    <p id="elapsed" class="text-3xl font-bold text-purple-400">0s</p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm">Estado</p>
+                    <p id="status" class="text-xl font-bold text-yellow-400">Idle</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Diagnóstico -->
+        <div class="bg-gray-800 rounded-lg p-4 mt-4">
+            <h2 class="text-xl font-bold mb-3">🩺 Diagnóstico</h2>
+            <div id="diagnostic" class="text-sm space-y-2">
+                <p>✓ Frontend cargado correctamente</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'http://localhost:8000/api';
+        
+        let chunkCount = 0;
+        let eventCount = 0;
+        let startTime = null;
+        let intervalId = null;
+
+        const sendBtn = document.getElementById('sendBtn');
+        const queryInput = document.getElementById('queryInput');
+        const eventsLog = document.getElementById('eventsLog');
+        const timeline = document.getElementById('timeline');
+        const diagnostic = document.getElementById('diagnostic');
+
+        sendBtn.addEventListener('click', async () => {
+            chunkCount = 0;
+            eventCount = 0;
+            startTime = Date.now();
+            
+            eventsLog.innerHTML = '';
+            timeline.innerHTML = '';
+            
+            updateStats();
+            document.getElementById('status').textContent = 'Conectando...';
+            
+            addDiagnostic('🔌 Iniciando conexión al servidor...');
+            
+            try {
+                const query = queryInput.value;
+                addDiagnostic(`📤 Enviando query: "${query}"`);
+                
+                const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: query }),
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                addDiagnostic('✅ Conexión establecida, iniciando lectura...');
+                document.getElementById('status').textContent = 'Streaming...';
+                
+                intervalId = setInterval(updateTimer, 100);
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    
+                    if (done) {
+                        addDiagnostic('🏁 Stream completado');
+                        document.getElementById('status').textContent = 'Completado';
+                        clearInterval(intervalId);
+                        break;
+                    }
+
+                    chunkCount++;
+                    const chunk = decoder.decode(value);
+                    const timestamp = ((Date.now() - startTime) / 1000).toFixed(2);
+                    
+                    logEvent(`[${timestamp}s] CHUNK #${chunkCount} (${chunk.length} bytes)`, 'cyan');
+                    
+                    const lines = chunk.split('\n');
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const eventData = JSON.parse(line.substring(6));
+                                eventCount++;
+                                
+                                const eventTimestamp = ((Date.now() - startTime) / 1000).toFixed(2);
+                                logEvent(`[${eventTimestamp}s] EVENT: ${eventData.event_type}`, 'green');
+                                logEvent(`  → ${JSON.stringify(eventData, null, 2)}`, 'gray');
+                                
+                                addToTimeline(eventData);
+                                
+                            } catch (e) {
+                                logEvent(`ERROR parsing: ${e.message}`, 'red');
+                            }
+                        }
+                    }
+                    
+                    updateStats();
+                }
+
+            } catch (error) {
+                addDiagnostic(`❌ ERROR: ${error.message}`);
+                document.getElementById('status').textContent = 'Error';
+                clearInterval(intervalId);
+            }
+        });
+
+        function logEvent(text, color) {
+            const colors = {
+                cyan: 'text-cyan-400',
+                green: 'text-green-400',
+                red: 'text-red-400',
+                gray: 'text-gray-500',
+                yellow: 'text-yellow-400'
+            };
+            
+            const p = document.createElement('p');
+            p.className = colors[color] || 'text-white';
+            p.textContent = text;
+            eventsLog.appendChild(p);
+            eventsLog.scrollTop = eventsLog.scrollHeight;
+        }
+
+        function addToTimeline(event) {
+            const div = document.createElement('div');
+            div.className = 'mb-2 p-2 bg-gray-700 rounded text-xs';
+            
+            const time = ((Date.now() - startTime) / 1000).toFixed(2);
+            const badge = getBadge(event.event_type);
+            
+            div.innerHTML = `
+                <div class="flex justify-between mb-1">
+                    <span class="${badge.class}">${badge.text}</span>
+                    <span class="text-gray-400">${time}s</span>
+                </div>
+                <div class="text-gray-300">${getEventDescription(event)}</div>
+            `;
+            
+            timeline.appendChild(div);
+            timeline.scrollTop = timeline.scrollHeight;
+        }
+
+        function getBadge(type) {
+            const badges = {
+                'node_start': { text: 'NODE_START', class: 'text-blue-400 font-bold' },
+                'node_end': { text: 'NODE_END', class: 'text-gray-400' },
+                'thought': { text: 'THOUGHT', class: 'text-yellow-400 font-bold' },
+                'documents_retrieved': { text: 'DOCS', class: 'text-green-400 font-bold' },
+                'grading_result': { text: 'GRADE', class: 'text-pink-400 font-bold' },
+                'rewrite': { text: 'REWRITE', class: 'text-purple-400 font-bold' },
+                'final_answer': { text: 'ANSWER', class: 'text-emerald-400 font-bold' },
+                'done': { text: 'DONE', class: 'text-green-500 font-bold' }
+            };
+            return badges[type] || { text: type.toUpperCase(), class: 'text-white' };
+        }
+
+        function getEventDescription(event) {
+            switch(event.event_type) {
+                case 'node_start':
+                    return `Iniciando: ${event.node_name}`;
+                case 'node_end':
+                    return `Finalizó: ${event.node_name}`;
+                case 'thought':
+                    return `Acción: ${event.action}`;
+                case 'documents_retrieved':
+                    return `${event.document_count} documentos encontrados`;
+                case 'grading_result':
+                    return `${event.relevant_count}/${event.total_count} relevantes → ${event.decision}`;
+                case 'rewrite':
+                    return `Nueva query: ${event.rewritten_query.substring(0, 50)}...`;
+                case 'final_answer':
+                    return `Respuesta generada (${event.sources.length} fuentes)`;
+                case 'done':
+                    return `Completado en ${event.total_time_seconds.toFixed(1)}s`;
+                default:
+                    return JSON.stringify(event);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('chunkCount').textContent = chunkCount;
+            document.getElementById('eventCount').textContent = eventCount;
+        }
+
+        function updateTimer() {
+            if (startTime) {
+                const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                document.getElementById('elapsed').textContent = `${elapsed}s`;
+            }
+        }
+
+        function addDiagnostic(text) {
+            const p = document.createElement('p');
+            p.textContent = text;
+            diagnostic.appendChild(p);
+        }
+
+        // Test inicial
+        addDiagnostic('✓ JavaScript cargado');
+        addDiagnostic('✓ Esperando interacción del usuario...');
+    </script>
+</body>
+</html>

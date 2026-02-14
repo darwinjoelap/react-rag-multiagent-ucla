@@ -2,7 +2,7 @@
 Router para endpoints de chat
 """
 from fastapi import APIRouter, HTTPException, status
-from typing import Dict
+from typing import Dict, Optional, List  # ← AGREGADO Optional, List
 import uuid
 import logging
 from datetime import datetime
@@ -177,7 +177,7 @@ from app.agents.graph import stream_graph
 @router.post("/stream", status_code=status.HTTP_200_OK)
 async def chat_stream(request: ChatRequest):
     """
-    Endpoint de chat con streaming en tiempo real
+    Endpoint de chat con streaming en tiempo real + SOPORTE MULTI-TURNO
     
     Emite eventos Server-Sent Events (SSE) durante el procesamiento:
     - Pensamiento del coordinador (ReAct)
@@ -186,21 +186,26 @@ async def chat_stream(request: ChatRequest):
     - Query reescrita (si aplica)
     - Respuesta final
     
+    **NUEVO: Multi-Turno**
+    El request puede incluir conversation_history para mantener contexto.
+    
     **Uso desde frontend:**
 ```javascript
-    const eventSource = new EventSource('/api/chat/stream', {
+    fetch('/api/chat/stream', {
         method: 'POST',
-        body: JSON.stringify({ message: "¿Qué es IA?" })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            message: "¿Y eso qué es?",
+            conversation_history: [
+                {role: "user", content: "¿Qué es ML?", timestamp: "..."},
+                {role: "assistant", content: "ML es...", timestamp: "..."}
+            ]
+        })
     });
-    
-    eventSource.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        console.log(data.event_type, data);
-    };
 ```
     
     - **message**: Pregunta o mensaje del usuario (requerido)
-    - **conversation_id**: ID de conversación existente (opcional, no usado en streaming)
+    - **conversation_history**: Lista de mensajes previos (opcional)
     
     Returns:
     - Stream de eventos en formato SSE
@@ -208,9 +213,29 @@ async def chat_stream(request: ChatRequest):
     try:
         logger.info(f"🌊 Iniciando streaming para: {request.message[:50]}...")
         
+        # ========== NUEVO: EXTRAER HISTORIAL DEL REQUEST ==========
+        conversation_history = None
+        
+        # Verificar si el request tiene conversation_history
+        if hasattr(request, 'conversation_history') and request.conversation_history:
+            conversation_history = request.conversation_history
+            logger.info(f"📜 Historial recibido: {len(conversation_history)} mensajes")
+        else:
+            logger.info(f"📜 Sin historial previo (primera consulta)")
+        # ===========================================================
+        
+        # ========== MODIFICADO: PASAR HISTORIAL A stream_graph ==========
+        async def event_generator():
+            async for event in stream_graph(
+                request.message,
+                conversation_history=conversation_history  # ← NUEVO: PASAR HISTORIAL
+            ):
+                yield event
+        # ================================================================
+        
         # Retornar streaming response
         return StreamingResponse(
-            stream_graph(request.message),
+            event_generator(),  # ← USAR GENERADOR CON HISTORIAL
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

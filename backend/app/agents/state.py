@@ -1,144 +1,137 @@
-from typing import TypedDict, List, Dict, Optional, Literal, Annotated
+"""
+Estado del Grafo con Soporte Multi-Turno
+"""
+
+from typing import TypedDict, List, Dict, Any, Optional
 from datetime import datetime
-import operator
+
+
+class Message(TypedDict):
+    """Mensaje individual en la conversación"""
+    role: str  # "user" o "assistant"
+    content: str
+    timestamp: str
+
 
 class GraphState(TypedDict):
     """
-    Estado compartido del grafo de agentes LangGraph
-    
-    Este estado se pasa entre todos los nodos del grafo y contiene
-    toda la información necesaria para el flujo ReAct.
-    
-    El patrón ReAct sigue: Thought → Action → Observation
+    Estado del grafo RAG con historial de conversación
     """
+    # Conversación
+    messages: List[Message]  # ← NUEVO: Historial completo
+    current_query: str  # Consulta actual del usuario
     
-    # ============= ENTRADA DEL USUARIO =============
-    user_query: str
-    """Consulta original del usuario"""
+    # Documentos
+    retrieved_documents: List[Dict[str, Any]]
     
-    # ============= HISTORIAL =============
-    conversation_history: Annotated[List[Dict[str, str]], operator.add]
-    """
-    Historial de mensajes acumulativo
-    Formato: [{"role": "user/assistant", "content": "..."}]
-    """
-    
-    # ============= ESTADO REACT =============
+    # Control de flujo
     iteration: int
-    """Número de iteración actual (máximo 5 para evitar loops)"""
-    retry_count: int
-    """Número de reintentos de reescritura (máximo 2)"""
-    thought: Optional[str]
-    """Pensamiento actual del agente (paso 1 de ReAct)"""
-    
-    action: Optional[str]
-    """Acción a ejecutar: 'search', 'answer', 'clarify'"""
-    
-    action_input: Optional[str]
-    """Input específico para la acción"""
-    
-    observation: Optional[str]
-    """Resultado/observación de la última acción ejecutada"""
-    
-    # ============= CONTEXTO Y DOCUMENTOS =============
-    retrieved_documents: Annotated[List[Dict], operator.add]
-    """Lista acumulativa de documentos recuperados"""
-    
-    relevant_context: Optional[str]
-    """Contexto concatenado y formateado para el LLM"""
-    
-    # ============= RESPUESTA FINAL =============
-    final_answer: Optional[str]
-    """Respuesta final generada para el usuario"""
-    
-    # ============= CONTROL DE FLUJO =============
-    next_step: Literal["coordinator", "search", "answer", "clarify", "end"]
-    """Siguiente nodo a ejecutar en el grafo"""
-    
+    retry_count: int  # Contador de rewrites
+    next_step: str
     should_continue: bool
-    """Flag para continuar o terminar el loop"""
     
-    # ============= METADATA Y DEBUGGING =============
-    trace: Annotated[List[Dict], operator.add]
-    """
-    Traza completa ReAct para debugging y visualización
-    Cada elemento: {step, agent, thought, action, observation, timestamp}
-    """
+    # ReAct
+    thought: str
+    action: str
+    action_input: str
     
-    timestamp: str
-    """Timestamp de inicio del proceso"""
+    # Resultados
+    final_answer: str
+    rewritten_query: Optional[str]
     
+    # Trace/Debug
+    trace: List[Dict[str, Any]]
     error: Optional[str]
-    """Mensaje de error si algo falla"""
 
 
-def create_initial_state(user_query: str) -> GraphState:
+def create_initial_state(user_query: str, conversation_history: List[Message] = None) -> GraphState:
     """
-    Crear estado inicial del grafo
+    Crear estado inicial con historial opcional
     
     Args:
-        user_query: Consulta del usuario
-        
-    Returns:
-        GraphState inicializado con valores por defecto
+        user_query: Consulta actual del usuario
+        conversation_history: Historial previo de la conversación (opcional)
     """
-    return GraphState(
-        # Input
-        user_query=user_query,
-        
-        # Historial
-        conversation_history=[
-            {"role": "user", "content": user_query}
-        ],
-        
-        # ReAct
-        iteration=0,
-        retry_count=0,
-        thought=None,
-        action=None,
-        action_input=None,
-        observation=None,
-        
-        # Contexto
-        retrieved_documents=[],
-        relevant_context=None,
-        
-        # Respuesta
-        final_answer=None,
-        
-        # Control
-        next_step="coordinator",
-        should_continue=True,
-        
-        # Metadata
-        trace=[],
-        timestamp=datetime.now().isoformat(),
-        error=None
-    )
+    # Si no hay historial, crear lista vacía
+    if conversation_history is None:
+        conversation_history = []
+    
+    # Agregar mensaje actual del usuario
+    messages = conversation_history + [{
+        "role": "user",
+        "content": user_query,
+        "timestamp": datetime.now().isoformat()
+    }]
+    
+    return {
+        "messages": messages,
+        "current_query": user_query,
+        "retrieved_documents": [],
+        "iteration": 1,
+        "retry_count": 0,
+        "next_step": "coordinator",
+        "should_continue": True,
+        "thought": "",
+        "action": "",
+        "action_input": "",
+        "final_answer": "",
+        "rewritten_query": None,
+        "trace": [],
+        "error": None
+    }
 
 
-def add_trace_step(
-    state: GraphState,
-    agent: str,
-    thought: str,
-    action: str,
-    observation: str
-) -> Dict:
+def add_assistant_message(state: GraphState, content: str) -> Dict:
     """
-    Agregar un paso a la traza ReAct
+    Agregar mensaje del asistente al historial
+    """
+    new_message = {
+        "role": "assistant",
+        "content": content,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    return {
+        "messages": state["messages"] + [new_message]
+    }
+
+
+def get_conversation_context(state: GraphState, last_n: int = 5) -> str:
+    """
+    Obtener contexto de los últimos N mensajes
     
     Args:
-        state: Estado actual del grafo
-        agent: Nombre del agente que ejecuta el paso
-        thought: Pensamiento/razonamiento del agente
-        action: Acción ejecutada
-        observation: Resultado observado
+        state: Estado actual
+        last_n: Número de mensajes a incluir
         
     Returns:
-        Diccionario con el paso de la traza para agregar al estado
+        String con el historial formateado
     """
+    messages = state["messages"][-last_n:]
+    
+    context = "Historial de la conversación:\n\n"
+    
+    for msg in messages:
+        role = "Usuario" if msg["role"] == "user" else "Asistente"
+        context += f"{role}: {msg['content']}\n\n"
+    
+    return context
+
+
+# Mantener funciones originales para compatibilidad
+def increment_iteration(state: GraphState) -> Dict:
+    """Incrementar contador de iteración"""
+    return {"iteration": state["iteration"] + 1}
+
+
+def increment_retry(state: GraphState) -> Dict:
+    """Incrementar contador de reintentos"""
+    return {"retry_count": state["retry_count"] + 1}
+
+
+def add_trace_step(state: GraphState, agent: str, thought: str, action: str, observation: str) -> Dict:
+    """Agregar paso al trace"""
     trace_step = {
-        "step": state["iteration"],
         "agent": agent,
         "thought": thought,
         "action": action,
@@ -146,47 +139,9 @@ def add_trace_step(
         "timestamp": datetime.now().isoformat()
     }
     
-    return {"trace": [trace_step]}
-
-
-def increment_iteration(state: GraphState) -> Dict:
-    """
-    Incrementar contador de iteraciones
-    
-    Args:
-        state: Estado actual
-        
-    Returns:
-        Diccionario con iteración incrementada
-    """
-    return {"iteration": state["iteration"] + 1}
+    return {"trace": state["trace"] + [trace_step]}
 
 
 def should_continue_graph(state: GraphState) -> bool:
-    """
-    Determinar si el grafo debe continuar ejecutándose
-    
-    Condiciones de parada:
-    - Se alcanzó el máximo de iteraciones (5)
-    - Se generó una respuesta final
-    - Hay un error
-    
-    Args:
-        state: Estado actual
-        
-    Returns:
-        True si debe continuar, False si debe terminar
-    """
-    # Parar si hay error
-    if state.get("error"):
-        return False
-    
-    # Parar si hay respuesta final
-    if state.get("final_answer"):
-        return False
-    
-    # Parar si se alcanzó máximo de iteraciones
-    if state.get("iteration", 0) >= 5:
-        return False
-    
-    return state.get("should_continue", True)
+    """Verificar si debe continuar el grafo"""
+    return state.get("should_continue", False) and state.get("iteration", 0) < 5

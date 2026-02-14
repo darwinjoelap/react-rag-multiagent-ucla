@@ -7,15 +7,23 @@ from datetime import datetime
 
 
 class ChatRequest(BaseModel):
-    """Request para endpoint de chat"""
+    """Request para endpoint de chat con soporte multi-turno"""
     message: str = Field(..., min_length=1, max_length=2000, description="Mensaje del usuario")
     conversation_id: Optional[str] = Field(None, description="ID de conversación existente")
+    conversation_history: Optional[List[Dict[str, str]]] = Field(
+        None, 
+        description="Historial de mensajes previos para contexto multi-turno"
+    )
     
     class Config:
         json_schema_extra = {
             "example": {
-                "message": "¿Qué es inteligencia artificial?",
-                "conversation_id": "550e8400-e29b-41d4-a716-446655440000"
+                "message": "¿Y eso es lo mismo que deep learning?",
+                "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+                "conversation_history": [
+                    {"role": "user", "content": "¿Qué es machine learning?", "timestamp": "2026-02-13T22:00:00"},
+                    {"role": "assistant", "content": "El machine learning es...", "timestamp": "2026-02-13T22:00:05"}
+                ]
             }
         }
 

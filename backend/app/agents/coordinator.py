@@ -4,7 +4,6 @@ Coordinador (Agent Router) - Nodo principal del grafo LangGraph
 El coordinador analiza cada consulta y decide:
 1. search - Buscar en base de conocimiento
 2. answer - Responder directamente
-3. clarify - Pedir aclaración al usuario
 """
 
 import logging
@@ -23,7 +22,7 @@ class CoordinatorAgent:
     
     Implementa el patrón ReAct:
     - Thought: Analiza la situación
-    - Action: Decide qué hacer (search/answer/clarify)
+    - Action: Decide qué hacer (search/answer)
     - Observation: Procesará el resultado en el siguiente nodo
     """
     
@@ -63,10 +62,25 @@ class CoordinatorAgent:
             action = parsed["action"]
             action_input = parsed["action_input"]
             
+            # ========== MODIFICADO: NO FORZAR BÚSQUEDA ==========
+            # El LLM decide si buscar o responder directamente
+            # Solo forzamos si estamos en iteración 2+ y no hay documentos
+            
+            iteration = state.get("iteration", 1)
+            has_docs = len(state.get("retrieved_documents", [])) > 0
+            retry_count = state.get("retry_count", 0)
+            
+            # Si ya buscamos 2 veces y no hay documentos, forzar respuesta
+            if retry_count >= 2 and not has_docs and action == "search":
+                logger.warning("⚠️ Límite de búsquedas alcanzado, forzando respuesta")
+                action = "answer"
+                thought = f"{thought} [Nota: Respondiendo con conocimiento general después de {retry_count} búsquedas sin resultados]"
+            # ====================================================
+            
             logger.info(f"Decisión: {action} | Thought: {thought[:50]}...")
             
             # 4. Validar iteraciones máximas
-            if state["iteration"] >= 5:
+            if iteration >= 5:
                 logger.warning("Máximo de iteraciones alcanzado")
                 return {
                     "thought": "Máximo de iteraciones alcanzado",
@@ -87,8 +101,7 @@ class CoordinatorAgent:
             # 5. Determinar siguiente nodo según la acción
             next_step_map = {
                 "search": "search",
-                "answer": "answer",
-                "clarify": "answer"  # Clarify también va a answer node
+                "answer": "answer"
             }
             next_step = next_step_map.get(action, "answer")
             

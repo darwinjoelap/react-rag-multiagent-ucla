@@ -9,33 +9,10 @@ import logging
 from typing import Dict
 from langchain_ollama import OllamaLLM
 from app.agents.state import GraphState, add_trace_step
+from app.agents.prompts import format_answer_prompt  # ← NUEVO: Usar prompt con multi-turno
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
-
-
-# Prompt para generar respuesta
-ANSWER_PROMPT = """Eres un asistente académico experto que responde preguntas basándose en documentos proporcionados.
-
-# TU TAREA
-Responder la pregunta del usuario utilizando ÚNICAMENTE la información de los documentos proporcionados.
-
-# REGLAS IMPORTANTES
-1. **Usa solo los documentos**: No inventes información
-2. **Sé preciso**: Responde directamente la pregunta
-3. **Cita fuentes**: Menciona de qué documento viene la información
-4. **Admite limitaciones**: Si los documentos no tienen la respuesta, dilo claramente
-5. **Sé conciso**: Respuesta clara y al punto
-
-# DOCUMENTOS DISPONIBLES
-{context}
-
-# PREGUNTA DEL USUARIO
-{question}
-
-# TU RESPUESTA
-Basándote en los documentos anteriores, responde de forma clara y precisa:
-"""
 
 
 class AnswerNode:
@@ -65,7 +42,18 @@ class AnswerNode:
         logger.info("Answer ejecutando - Generando respuesta")
         
         try:
-            question = state["user_query"]
+            # ========== CORREGIDO: Usar current_query en lugar de user_query ==========
+            question = state.get("current_query", "")
+            
+            # Si no hay current_query, intentar con user_query (backward compatibility)
+            if not question:
+                question = state.get("user_query", "")
+            
+            # Si aún no hay query, usar action_input como último recurso
+            if not question:
+                question = state.get("action_input", "")
+            # ===========================================================================
+            
             action = state.get("action", "answer")
             action_input = state.get("action_input", "")
             
@@ -73,33 +61,26 @@ class AnswerNode:
             if action == "clarify":
                 final_answer = action_input
                 thought = "Solicitando aclaración al usuario"
+                logger.info("Respuesta tipo clarify generada")
             
-            # Si hay contexto, generar respuesta basada en documentos
-            elif state.get("relevant_context"):
-                context = state["relevant_context"]
-                
-                # Formatear prompt
-                prompt = ANSWER_PROMPT.format(
-                    context=context[:3000],  # Limitar contexto
-                    question=question
-                )
-                
-                # Generar respuesta
-                logger.debug("Generando respuesta con LLM")
-                final_answer = self.llm.invoke(prompt)
-                thought = "Generando respuesta basada en documentos recuperados"
-            
-            # Si no hay contexto pero hay action_input (respuesta directa del coordinador)
-            elif action_input:
-                final_answer = action_input
-                thought = "Respuesta directa sin búsqueda de documentos"
-            
-            # Caso por defecto
+            # ========== MODIFICADO: Usar format_answer_prompt con multi-turno ==========
             else:
-                final_answer = "Lo siento, no pude encontrar información relevante para responder tu pregunta. ¿Podrías reformularla o proporcionar más detalles?"
-                thought = "Sin contexto ni respuesta disponible"
-            
-            logger.info("Respuesta generada exitosamente")
+                # Usar el prompt del archivo prompts.py que incluye historial
+                logger.debug("Generando respuesta con prompt multi-turno")
+                prompt = format_answer_prompt(state)
+                
+                # Generar respuesta con LLM
+                final_answer = self.llm.invoke(prompt).strip()
+                
+                # Determinar el tipo de respuesta
+                docs = state.get("retrieved_documents", [])
+                if len(docs) > 0:
+                    thought = f"Generando respuesta basada en {len(docs)} documentos recuperados"
+                else:
+                    thought = "Generando respuesta con conocimiento general (sin documentos)"
+                
+                logger.info(f"✅ Respuesta generada ({len(final_answer)} caracteres)")
+            # ===========================================================================
             
             return {
                 "final_answer": final_answer,
@@ -110,14 +91,24 @@ class AnswerNode:
                     agent="answer",
                     thought=thought,
                     action="answer",
-                    observation="Respuesta final generada"
+                    observation=f"Respuesta final generada ({len(final_answer)} chars)"
                 )
             }
             
         except Exception as e:
-            logger.error(f"Error en answer: {str(e)}")
+            logger.error(f"❌ Error en answer: {str(e)}", exc_info=True)
+            
+            # ========== MEJORADO: Respuesta de fallback más informativa ==========
+            error_message = "Lo siento, ocurrió un error al generar la respuesta."
+            
+            # Intentar dar una respuesta básica si hay action_input
+            action_input = state.get("action_input", "")
+            if action_input and len(action_input) > 10:
+                error_message = action_input
+                logger.info("Usando action_input como respuesta de fallback")
+            
             return {
-                "final_answer": f"Lo siento, ocurrió un error al generar la respuesta: {str(e)}",
+                "final_answer": error_message,
                 "error": f"Error en answer: {str(e)}",
                 "next_step": "end",
                 "should_continue": False,
@@ -129,6 +120,7 @@ class AnswerNode:
                     observation=str(e)
                 )
             }
+            # ====================================================================
 
 
 # Instancia global
