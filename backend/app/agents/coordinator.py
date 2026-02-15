@@ -8,10 +8,9 @@ El coordinador analiza cada consulta y decide:
 
 import logging
 from typing import Dict
-from langchain_ollama import OllamaLLM
 from app.agents.state import GraphState, add_trace_step, increment_iteration
 from app.agents.prompts import format_coordinator_prompt, parse_react_response
-from app.core.config import settings
+from app.core.llm_config import get_coordinator_llm  # ← NUEVO: Importar LLM optimizado
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +26,9 @@ class CoordinatorAgent:
     """
     
     def __init__(self):
-        """Inicializar coordinador con LLM"""
-        self.llm = OllamaLLM(
-            base_url=settings.OLLAMA_BASE_URL,
-            model=settings.OLLAMA_MODEL,
-            temperature=0.3  # Baja temperatura para decisiones más deterministas
-        )
-        logger.info("CoordinatorAgent inicializado")
+        """Inicializar coordinador con LLM optimizado"""
+        self.llm = get_coordinator_llm()  # ← OPTIMIZADO: llama3.2:1b con temp=0.0, tokens=256
+        logger.info("CoordinatorAgent inicializado con llama3.2:1b optimizado")
     
     def __call__(self, state: GraphState) -> Dict:
         """

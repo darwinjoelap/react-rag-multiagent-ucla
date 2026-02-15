@@ -1,6 +1,5 @@
 from typing import List, Dict, Optional, Any
 import logging
-from app.services.vector_store import VectorStoreService
 
 logger = logging.getLogger(__name__)
 
@@ -9,7 +8,7 @@ class RetrieverService:
     
     def __init__(
         self,
-        vector_store: Optional[VectorStoreService] = None,
+        vector_store = None,  # Tipo genérico, no importar VectorStoreService
         top_k: int = 5,
         similarity_threshold: float = 0.2
     ):
@@ -21,7 +20,13 @@ class RetrieverService:
             top_k: Número de documentos a recuperar por defecto
             similarity_threshold: Umbral mínimo de similitud (0-1)
         """
-        self.vector_store = vector_store or VectorStoreService()
+        if vector_store is None:
+            # Importar aquí para evitar dependencias circulares
+            from app.services.vector_store import VectorStoreService
+            self.vector_store = VectorStoreService()
+        else:
+            self.vector_store = vector_store
+            
         self.top_k = top_k
         self.similarity_threshold = similarity_threshold
         
@@ -68,6 +73,28 @@ class RetrieverService:
         final_results = filtered_results[:k]
         
         logger.info(f"Recuperados {len(final_results)} documentos (filtrados de {len(results)})")
+        
+        # 🆕 LOGGING DETALLADO DE FUENTES
+        if final_results:
+            logger.info("📚 Fuentes recuperadas:")
+            for i, doc in enumerate(final_results, 1):
+                source = doc['metadata'].get('source', 'unknown')
+                filename = source.split('/')[-1] if '/' in source else source
+                similarity = doc['similarity']
+                chunk_id = doc['metadata'].get('chunk_id', 'N/A')
+                logger.info(f"  [{i}] {filename} (chunk {chunk_id}) - sim={similarity:.4f}")
+        else:
+            logger.warning("⚠️ No se recuperaron documentos sobre el threshold")
+        
+        # 🆕 MOSTRAR TAMBIÉN LOS RECHAZADOS
+        rejected = [doc for doc in results if doc['similarity'] < threshold]
+        if rejected:
+            logger.info(f"❌ {len(rejected)} documentos descartados (similarity < {threshold}):")
+            for i, doc in enumerate(rejected[:3], 1):  # Mostrar solo los 3 primeros
+                source = doc['metadata'].get('source', 'unknown')
+                filename = source.split('/')[-1] if '/' in source else source
+                similarity = doc['similarity']
+                logger.info(f"  [{i}] {filename} - sim={similarity:.4f}")
         
         return final_results
     

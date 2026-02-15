@@ -7,9 +7,8 @@ la consulta del usuario. Documentos irrelevantes se filtran.
 
 import logging
 from typing import Dict, List
-from langchain_ollama import OllamaLLM
 from app.agents.state import GraphState, add_trace_step
-from app.core.config import settings
+from app.core.llm_config import get_grader_llm  # ← NUEVO: Importar LLM optimizado
 
 logger = logging.getLogger(__name__)
 
@@ -55,39 +54,31 @@ class GraderAgent:
     """
     
     def __init__(self):
-        """Inicializar grader con LLM"""
-        self.llm = OllamaLLM(
-            base_url=settings.OLLAMA_BASE_URL,
-            model=settings.OLLAMA_MODEL,
-            temperature=0.0  # Temperatura 0 para evaluaciones binarias consistentes
-        )
-        logger.info("GraderAgent inicializado")
+        """Inicializar grader con LLM optimizado"""
+        self.llm = get_grader_llm()  # ← OPTIMIZADO: llama3.2:1b con temp=0.0, tokens=128
+        logger.info("GraderAgent inicializado con llama3.2:1b optimizado")
     
-    def grade_document(self, question: str, document: str) -> bool:
+    def grade_document(self, question: str, document: str, similarity: float = 0.0) -> bool:
         """
-        Evaluar un documento individual
+        Evaluar un documento - VERSIÓN OPTIMIZADA SIN LLM
+        
+        Usa solo el similarity score para determinar relevancia.
+        Esto reduce el tiempo de 38s a <1s.
         
         Args:
             question: Pregunta del usuario
             document: Contenido del documento
+            similarity: Score de similitud del vector store
             
         Returns:
             True si es relevante, False si no
         """
-        # Formatear prompt
-        prompt = GRADER_PROMPT.format(
-            question=question,
-            document=document[:1000]  # Limitar a 1000 chars para eficiencia
-        )
+        # Estrategia simple: usar solo similarity score
+        # Threshold: 0.25 (ajustable según necesidad)
+        threshold = 0.25
+        is_relevant = similarity >= threshold
         
-        # Obtener evaluación
-        response = self.llm.invoke(prompt).strip().lower()
-        
-        # Parsear respuesta
-        #is_relevant = "relevante" in response and "irrelevante" not in response
-        is_relevant = "relevante" in response or len(response) < 20
-        
-        logger.debug(f"Documento evaluado: {'✅ relevante' if is_relevant else '❌ irrelevante'}")
+        logger.debug(f"Doc evaluado: sim={similarity:.4f} → {'✅ relevante' if is_relevant else '❌ irrelevante'}")
         
         return is_relevant
     
@@ -104,7 +95,16 @@ class GraderAgent:
         logger.info("Grader ejecutando - Evaluando documentos")
         
         try:
-            question = state["user_query"]
+            # ========== CORREGIDO: Usar current_query ==========
+            question = state.get("current_query", "")
+            
+            # Fallback si no hay current_query
+            if not question:
+                question = state.get("user_query", "")
+            if not question:
+                question = state.get("action_input", "")
+            # ===================================================
+            
             documents = state.get("retrieved_documents", [])
             
             if not documents:
@@ -120,23 +120,37 @@ class GraderAgent:
                     )
                 }
             
-            # Evaluar cada documento
-            relevant_docs = []
-            irrelevant_count = 0
+            # 🆕 LOGGING DETALLADO POR DOCUMENTO
+            logger.info(f"📊 Evaluando {len(documents)} documentos:")
             
-            for doc in documents:
+            # Evaluar cada documento usando similarity score
+            relevant_docs = []
+            irrelevant_docs = []
+            
+            for i, doc in enumerate(documents, 1):
                 doc_content = doc.get("document", "")
-                is_relevant = self.grade_document(question, doc_content)
+                similarity = doc.get("similarity", 0.0)
                 
+                # Extraer metadata
+                source = doc.get('metadata', {}).get('source', 'unknown')
+                filename = source.split('/')[-1] if '/' in source else source
+                chunk_id = doc.get('metadata', {}).get('chunk_id', 'N/A')
+                
+                # Evaluar relevancia
+                is_relevant = self.grade_document(question, doc_content, similarity)
+                
+                # 🆕 LOG INDIVIDUAL POR DOCUMENTO
                 if is_relevant:
                     relevant_docs.append(doc)
+                    logger.info(f"  ✅ [{i}] {filename} (chunk {chunk_id}, sim={similarity:.4f}) - RELEVANTE")
                 else:
-                    irrelevant_count += 1
+                    irrelevant_docs.append(doc)
+                    logger.info(f"  ❌ [{i}] {filename} (chunk {chunk_id}, sim={similarity:.4f}) - IRRELEVANTE")
             
-            logger.info(f"Documentos: {len(relevant_docs)} relevantes, {irrelevant_count} irrelevantes")
+            logger.info(f"Documentos: {len(relevant_docs)} relevantes, {len(irrelevant_docs)} irrelevantes")
             
             # Construir observación
-            observation = f"Evaluados {len(documents)} documentos: {len(relevant_docs)} relevantes, {irrelevant_count} irrelevantes"
+            observation = f"Evaluados {len(documents)} documentos: {len(relevant_docs)} relevantes, {len(irrelevant_docs)} irrelevantes"
             
             # Determinar siguiente paso
             if len(relevant_docs) == 0:

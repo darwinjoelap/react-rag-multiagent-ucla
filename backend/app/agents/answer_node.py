@@ -7,10 +7,9 @@ una respuesta fundamentada en los documentos.
 
 import logging
 from typing import Dict
-from langchain_ollama import OllamaLLM
 from app.agents.state import GraphState, add_trace_step
 from app.agents.prompts import format_answer_prompt  # ← NUEVO: Usar prompt con multi-turno
-from app.core.config import settings
+from app.core.llm_config import get_answer_llm  # ← NUEVO: Importar LLM optimizado
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +20,9 @@ class AnswerNode:
     """
     
     def __init__(self):
-        """Inicializar con LLM"""
-        self.llm = OllamaLLM(
-            base_url=settings.OLLAMA_BASE_URL,
-            model=settings.OLLAMA_MODEL,
-            temperature=0.7  # Temperatura moderada para respuestas naturales
-        )
-        logger.info("AnswerNode inicializado")
+        """Inicializar con LLM optimizado"""
+        self.llm = get_answer_llm()  # ← OPTIMIZADO: llama3.2:1b con temp=0.3, tokens=512
+        logger.info("AnswerNode inicializado con llama3.2:1b optimizado")
     
     def __call__(self, state: GraphState) -> Dict:
         """

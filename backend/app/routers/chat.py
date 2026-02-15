@@ -250,3 +250,18 @@ async def chat_stream(request: ChatRequest):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error iniciando streaming: {str(e)}"
         )
+# En backend/app/routers/chat.py
+import time
+
+async def stream_chat(request: ChatRequest):
+    total_start = time.time()
+    
+    async for event in stream_graph(...):
+        # ... tu código actual ...
+        
+        if event["event"] == "node_start":
+            event["timestamp"] = time.time() - total_start
+            print(f"⏱️ {event['node']} started at {event['timestamp']:.2f}s")
+        
+        if event["event"] == "node_end":
+            print(f"⏱️ {event['node']} ended at {time.time() - total_start:.2f}s")

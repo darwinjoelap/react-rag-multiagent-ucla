@@ -8,9 +8,8 @@ de encontrar información útil.
 
 import logging
 from typing import Dict
-from langchain_ollama import OllamaLLM
 from app.agents.state import GraphState, add_trace_step, increment_retry  # ← AGREGADO increment_retry
-from app.core.config import settings
+from app.core.llm_config import get_rewriter_llm  # ← NUEVO: Importar LLM optimizado
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +63,9 @@ class RewriterAgent:
     """
     
     def __init__(self):
-        """Inicializar rewriter con LLM"""
-        self.llm = OllamaLLM(
-            base_url=settings.OLLAMA_BASE_URL,
-            model=settings.OLLAMA_MODEL,
-            temperature=0.5  # Temperatura media para creatividad controlada
-        )
-        logger.info("RewriterAgent inicializado")
+        """Inicializar rewriter con LLM optimizado"""
+        self.llm = get_rewriter_llm()  # ← OPTIMIZADO: llama3.2:1b con temp=0.5, tokens=256
+        logger.info("RewriterAgent inicializado con llama3.2:1b optimizado")
     
     def rewrite_query(self, original_query: str, previous_query: str = None) -> str:
         """

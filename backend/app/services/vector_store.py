@@ -226,24 +226,27 @@ class VectorStoreService:
         
         # Obtener tipos de archivos si hay documentos
         if count > 0:
+            # Obtener muestra grande para estadísticas precisas
+            sample_size = min(1000, count)
             sample = self.collection.get(
-                limit=min(100, count),
+                limit=sample_size,
                 include=["metadatas"]
             )
             
             file_types = {}
-            sources = set()
+            sources = {}  # Cambiar a dict para contar chunks por fuente
             
             for metadata in sample['metadatas']:
                 ftype = metadata.get('file_type', 'unknown')
                 file_types[ftype] = file_types.get(ftype, 0) + 1
                 
-                source = metadata.get('source', '')
+                source = metadata.get('source', 'unknown')
                 if source:
-                    sources.add(source)
+                    sources[source] = sources.get(source, 0) + 1
             
             stats['file_types'] = file_types
-            stats['unique_sources'] = len(sources)
+            stats['sources'] = sources  # Dict con conteo por fuente
+            stats['total_sources'] = len(sources)  # Total de fuentes únicas
         
         return stats
     
