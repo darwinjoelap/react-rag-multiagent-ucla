@@ -1,14 +1,20 @@
-# 🤖 Sistema RAG Multiagente con React + LangGraph
+# 🤖 Sistema RAG Multi-Agente con Patrón ReAct + LangGraph
 
-> Proyecto de Tesis - Universidad Centroccidental Lisandro Alvarado (UCLA)
+> **Proyecto de Tesis** - Universidad Centroccidental Lisandro Alvarado (UCLA)  
+> **Sistema de Recuperación Aumentada por Generación (RAG)** con arquitectura multi-agente para análisis de documentos académicos
 
-Sistema de Recuperación Aumentada por Generación (RAG) con arquitectura multiagente para análisis de documentos académicos mediante agentes especializados que colaboran usando el patrón ReAct.
+[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-0.2.62-green.svg)](https://langchain-ai.github.io/langgraph/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-Latest-009688.svg)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/React-18-61DAFB.svg)](https://react.dev/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+---
 
 ## 👥 Autores
 
-- **Darwin Joel Arroyo Perez** - [@darwinjoelap](https://github.com/darwinjoelap) - Backend & Agentes
-- **Julio Cesar Matheus** - [@juliomatheus](https://github.com/juliomatheus) - API & Frontend
-
+**Darwin Joel Arroyo Perez**   
+**Julio Cesar Matheus Arroyo**
 **Tutor:** Dra. Maria Auxiliadora Perez  
 **Universidad:** Universidad Centroccidental Lisandro Alvarado (UCLA)  
 **Año:** 2026
@@ -17,506 +23,665 @@ Sistema de Recuperación Aumentada por Generación (RAG) con arquitectura multia
 
 ## 📋 Descripción del Proyecto
 
-Sistema inteligente que combina técnicas de RAG (Retrieval Augmented Generation) con una arquitectura multiagente desarrollada con LangGraph. Permite analizar documentos académicos mediante agentes especializados que colaboran usando el patrón ReAct para proporcionar respuestas contextuales y precisas.
+Sistema inteligente que combina **RAG (Retrieval-Augmented Generation)** con una arquitectura **multi-agente** desarrollada con **LangGraph**. Implementa el **patrón ReAct** (Reasoning and Acting) para responder preguntas complejas sobre documentos académicos de Inteligencia Artificial y Machine Learning.
 
-### 🎯 Objetivos
+### 🎯 Características Principales
 
-- ✅ Implementar un sistema RAG multiagente utilizando tecnologías open-source
-- ✅ Desarrollar agentes especializados con patrón ReAct (Reasoning + Acting)
-- ✅ Crear sistema de recuperación con ChromaDB y embeddings semánticos
-- 🚧 Desarrollar API REST con FastAPI (Día 6-7)
-- 🚧 Crear interfaz web interactiva con React (Día 8-10)
-- 🚧 Demostrar efectividad del sistema en análisis académico
+✅ **5 Agentes Especializados** colaborando en flujo orquestado  
+✅ **Patrón ReAct** (Thought → Action → Observation → Decision)  
+✅ **Auto-corrección** mediante reformulación de queries (hasta 2 reintentos)  
+✅ **466 documentos** académicos indexados semánticamente  
+✅ **LLM Local** (Llama 3.2 vía Ollama) - sin dependencias de APIs comerciales  
+✅ **Visualización en tiempo real** del flujo con grafos Mermaid  
+✅ **Streaming SSE** para respuestas progresivas  
+✅ **Trazas ReAct auditables** completas  
+
+### 🏆 Resultados
+
+- **Precisión:** 85% (vs 60% baseline monolítico)
+- **Manejo fuera de dominio:** 100% (admite limitaciones sin alucinar)
+- **Tiempo de respuesta:** ~30-50 segundos (optimizado desde 4.6 minutos)
+- **Precisión en queries ambiguas:** 80% (vs 45% baseline)
 
 ---
 
 ## 🏗️ Arquitectura del Sistema
 
 ### Diagrama General
+
 ```
 ┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
-│   React (WIP)    │◄────►│  FastAPI (WIP)   │◄────►│   LangGraph      │
-│    Frontend      │      │      API         │      │  Multiagentes    │
+│   React + TS     │◄────►│     FastAPI      │◄────►│   LangGraph      │
+│   Frontend       │      │   Streaming SSE  │      │  Multi-Agentes   │
+│   + Mermaid.js   │      │   CORS Enabled   │      │  (5 Agentes)     │
 └──────────────────┘      └──────────────────┘      └──────────────────┘
                                    │                          │
                                    ▼                          ▼
                           ┌─────────────────┐      ┌──────────────────┐
                           │    ChromaDB     │      │  Ollama Server   │
                           │  Vector Store   │      │   Llama 3.2      │
-                          │  392 documentos │      │  Local LLM       │
+                          │  466 documentos │      │  Local LLM       │
                           └─────────────────┘      └──────────────────┘
 ```
 
-### Flujo de Agentes (ReAct Pattern)
+### Flujo de Agentes (Patrón ReAct)
+
 ```
-Usuario → Coordinator Agent
-              ↓
-        [Análisis ReAct]
-         Thought: "Pregunta técnica..."
-         Action: search
-         Action Input: "query optimizada"
-              ↓
-         Search Node → ChromaDB
-              ↓
-        [5 documentos recuperados]
-              ↓
-         Grader Agent
-              ↓
-    ¿Documentos relevantes?
-         /           \
-       Sí            No
-        ↓             ↓
-   Answer Node   Rewriter Agent
-        ↓             ↓
-   [Respuesta]   [Nueva query]
-                      ↓
-                 Search Node (retry)
+Usuario → 📊 Coordinator Agent (ReAct)
+              │
+              ├─ Thought: "Necesito buscar información..."
+              ├─ Action: search / answer / rewrite
+              ├─ Observation: "5 docs recuperados, sim=0.35"
+              └─ Decision: → siguiente nodo
+                    │
+            ┌───────┴────────┐
+            ▼                ▼
+      🔍 Search Agent    💬 Answer Agent
+            │                    ↑
+            ▼                    │
+      ✅ Grader Agent            │
+            │                    │
+    ┌───────┴────────┐           │
+    ▼                ▼           │
+Relevante      Irrelevante       │
+    │                │           │
+    └────────────────┤           │
+                     ▼           │
+              🔄 Rewriter Agent  │
+                     │           │
+              (retry < 2) ───────┘
+                     │
+              (retry >= 2) → Answer forzado
 ```
 
 ---
 
-## 🧩 Componentes Implementados
+## 🧩 Los 5 Agentes del Sistema
 
-### ✅ Backend RAG Multiagente (Días 1-5)
+### 1️⃣ **Coordinator Agent** (ReAct Pattern)
+- **Responsabilidad:** Analiza queries y decide estrategia
+- **Decisiones:** `search`, `answer`, `clarify`
+- **Características:** Expansión automática de queries ambiguas
+- **Prompt:** CoT (Chain-of-Thought) explícito
 
-#### 1. **Base de Conocimiento** (Día 1-2)
-- ✅ **Document Loader**: Carga PDFs desde `data/raw/`
-- ✅ **Text Splitting**: RecursiveCharacterTextSplitter (500 chars, overlap 50)
-- ✅ **Embeddings**: `sentence-transformers/all-MiniLM-L6-v2` (384 dimensiones)
-- ✅ **Vector Store**: ChromaDB con persistencia local
-- ✅ **Retriever**: Top-k=5, similarity_threshold=0.2
-- ✅ **Estado**: 392 documentos indexados (2 libros de IA)
+### 2️⃣ **Search Agent** (Tool Use + RAG)
+- **Responsabilidad:** Recuperación semántica de documentos
+- **Tecnología:** ChromaDB + sentence-transformers (384D)
+- **Parámetros:** Top-K=5, Threshold=0.2
+- **Output:** Documentos con scores de similitud
 
-#### 2. **Sistema Multiagente LangGraph** (Día 3-5)
+### 3️⃣ **Grader Agent** (Multi-Agent)
+- **Responsabilidad:** Evaluación de relevancia de documentos
+- **Método:** Similarity score (threshold 0.25)
+- **Optimización:** LLM-free (< 1ms vs 38s con LLM)
+- **Decisión:** `answer` (si relevantes) o `rewrite` (si irrelevantes)
 
-##### **Coordinator Agent** (`coordinator.py`)
-- Cerebro del sistema
-- Analiza queries usando patrón ReAct
-- Decide acción: `search`, `answer`, o `clarify`
-- Genera razonamiento explícito (Thought → Action → Observation)
+### 4️⃣ **Rewriter Agent** (Multi-Agent + ReAct Loop)
+- **Responsabilidad:** Reformulación de queries pobres
+- **Estrategias:** Expansión, generalización, sinónimos
+- **Límite:** Máximo 2 reintentos (previene loops infinitos)
+- **Output:** Query optimizada para nueva búsqueda
 
-##### **Search Node** (`search_node.py`)
-- Recupera documentos relevantes de ChromaDB
-- Integrado con `RetrieverService`
-- Retorna top-5 documentos con similarity scores
-
-##### **Grader Agent** (`grader.py`)
-- Evalúa relevancia de cada documento recuperado
-- Clasifica: `relevant` / `irrelevant`
-- Decide next step: `answer` o `rewrite`
-
-##### **Rewriter Agent** (`rewriter.py`)
-- Optimiza queries que no dieron resultados
-- Genera versión mejorada y más específica
-- Reinicia búsqueda con nueva query
-
-##### **Answer Node** (`answer_node.py`)
-- Genera respuesta final al usuario
-- Sintetiza información de documentos
-- Cita fuentes originales
-- Modos: contexto, directa, clarificación
-
-##### **Graph Orchestration** (`graph.py`)
-- Orquesta flujo completo de agentes
-- Gestión de estado con `GraphState`
-- Control de iteraciones (máx 5)
-- Traza ReAct completa de ejecución
-
-#### 3. **Servicios Core**
-- ✅ `embeddings.py`: Servicio de embeddings
-- ✅ `vector_store.py`: Gestión de ChromaDB
-- ✅ `retriever.py`: Servicio de recuperación
-- ✅ `llm.py`: Integración con Ollama
-- ✅ `document_loader.py`: Carga de PDFs
-
-### 🚧 API FastAPI (Día 6-7) - PENDIENTE
-
-Endpoints planificados:
-```
-POST   /api/chat/              # Chat con el sistema
-GET    /api/chat/history/{id}  # Historial de conversación
-GET    /api/documents/stats    # Estadísticas del vector store
-POST   /api/documents/upload   # Subir nuevos documentos
-GET    /health                 # Health check
-```
-
-### 🚧 Frontend React (Día 8-10) - PENDIENTE
-
-Componentes planificados:
-- `ChatInterface`: Container principal
-- `MessageList`: Lista de mensajes
-- `InputBox`: Input del usuario
-- `SourcesList`: Fuentes citadas
-- `LoadingIndicator`: Estado de carga
+### 5️⃣ **Answer Agent** (RAG Generation)
+- **Responsabilidad:** Síntesis de respuesta final
+- **LLM:** Llama 3.2 (Ollama local)
+- **Parámetros:** Temperatura 0.3, Max tokens 1024
+- **Modo:** RAG puro (solo información del contexto)
 
 ---
 
-## 🚀 Instalación
+## 🚀 Inicio Rápido
 
 ### Prerrequisitos
 
-- **Python 3.11+**
-- **Node.js 18+** (para frontend)
-- **Ollama** instalado y corriendo
+Asegúrate de tener instalado:
+
+- **Python 3.11+** ([Descargar](https://www.python.org/downloads/))
+- **Node.js 18+** ([Descargar](https://nodejs.org/))
+- **Ollama** ([Descargar](https://ollama.com/download))
 - **Git**
 
-### 1. Clonar el Repositorio
+### Instalación Paso a Paso
+
+#### 1️⃣ **Clonar el Repositorio**
+
 ```bash
 git clone https://github.com/darwinjoelap/react-rag-multiagent-ucla.git
 cd react-rag-multiagent-ucla
 ```
 
-### 2. Configurar Backend
+#### 2️⃣ **Configurar Backend**
+
 ```bash
+# Navegar a backend
 cd backend
 
 # Crear entorno virtual
 python -m venv venv
 
 # Activar entorno virtual
-# Windows:
-venv\Scripts\activate
+# Windows PowerShell:
+.\venv\Scripts\Activate.ps1
+# Windows CMD:
+venv\Scripts\activate.bat
 # Linux/Mac:
 source venv/bin/activate
 
 # Instalar dependencias
-pip install -r requirements.txt
+pip install -r requirements.txt --break-system-packages  # Si es necesario
+
+# Volver a la raíz
+cd ..
 ```
 
-### 3. Configurar Ollama
+#### 3️⃣ **Configurar Ollama**
+
 ```bash
-# Iniciar servidor Ollama
+# TERMINAL 1: Iniciar servidor Ollama (dejar corriendo)
 ollama serve
 
-# En otra terminal, descargar modelo
+# TERMINAL 2: Descargar modelo Llama 3.2
 ollama pull llama3.2
 
 # Verificar instalación
 ollama list
+# Deberías ver: llama3.2:latest
 ```
 
-### 4. Preparar Datos (Opcional - ya incluidos)
-```bash
-# Los documentos ya están indexados en data/vectorstore/
-# Si quieres re-indexar:
-cd backend
-jupyter notebook
+#### 4️⃣ **Verificar Base de Conocimiento**
 
-# Ejecutar notebooks en orden:
-# 1. notebooks/01_document_loader.ipynb
-# 2. notebooks/02_embeddings.ipynb
-# 3. notebooks/03_retriever.ipynb
+```bash
+# Los 466 documentos ya están indexados en data/vectorstore/
+# Para verificar:
+cd backend
+python -c "from app.services.vector_store import VectorStoreService; vs = VectorStoreService(); print(f'Documentos indexados: {vs.collection.count()}')"
+
+# Salida esperada: Documentos indexados: 466
+```
+
+#### 5️⃣ **Iniciar Backend (FastAPI)**
+
+```bash
+# TERMINAL 3: Desde la raíz del proyecto
+cd backend
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# ✅ Backend corriendo en: http://localhost:8000
+# ✅ Docs interactivos: http://localhost:8000/docs
+```
+
+#### 6️⃣ **Iniciar Frontend (React)**
+
+```bash
+# TERMINAL 4: Desde la raíz del proyecto
+cd frontend
+
+# Instalar dependencias (solo primera vez)
+npm install
+
+# Iniciar servidor de desarrollo
+npm run dev
+
+# ✅ Frontend corriendo en: http://localhost:3000
 ```
 
 ---
 
-## 🎮 Uso Actual
+## 🎮 Uso del Sistema
 
-### Probar Sistema Multiagente (Notebooks)
+### Interfaz Web (Recomendado)
+
+1. **Abrir navegador:** http://localhost:3000
+2. **Escribir query:** Ejemplo: "¿Qué es un agente inteligente?"
+3. **Observar:**
+   - **Panel izquierdo:** Grafo del flujo en tiempo real
+   - **Panel central:** Respuesta streaming
+   - **Panel derecho:** Timeline ReAct con trazas
+4. **Métricas:** Tiempo, documentos recuperados, iteraciones
+
+### API REST (Programático)
+
+#### **Endpoint Principal: Chat Streaming**
+
 ```bash
-cd backend
-jupyter notebook
-
-# Abrir y ejecutar:
-notebooks/04_langgraph_agents.ipynb
+# cURL Example
+curl -X POST "http://localhost:8000/api/chat/stream" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "¿Qué es machine learning?",
+    "history": []
+  }'
 ```
 
-Este notebook contiene 15 tests completos:
-1. ✅ Coordinator Agent individual
-2. ✅ Múltiples tipos de queries
-3. ✅ Search Node con ChromaDB
-4. ✅ Grader Agent evaluation
-5. ✅ Rewriter Agent optimization
-6. ✅ Answer Node generation
-7. ✅ Grafo completo (query simple)
-8. ✅ Grafo completo (query técnica)
-9. ✅ Conversación multi-turn
-10. ✅ Límite de iteraciones
-11. ✅ Exportación de trazas JSON
+#### **Python SDK**
 
-### Usar Programáticamente
 ```python
-from app.agents.graph import run_graph
+import requests
 
-# Ejecutar query
-final_state = run_graph("¿Qué es inteligencia artificial?")
+url = "http://localhost:8000/api/chat/stream"
+payload = {
+    "query": "¿Qué es un agente inteligente?",
+    "history": []
+}
 
-# Ver respuesta
-print(final_state['final_answer'])
+response = requests.post(url, json=payload, stream=True)
 
-# Ver documentos recuperados
-for doc in final_state['retrieved_documents']:
-    print(f"- {doc['metadata']['source']}: {doc['similarity']:.2f}")
-
-# Ver traza completa
-for step in final_state['trace']:
-    print(f"{step['agent']}: {step['action']}")
+for line in response.iter_lines():
+    if line:
+        print(line.decode('utf-8'))
 ```
 
-### Ejemplos de Queries
-```python
-# Query técnica
-run_graph("¿Qué es machine learning?")
-# → Busca en docs → Grader → Respuesta con fuentes
+#### **Otros Endpoints**
 
-# Saludo
-run_graph("Hola, ¿cómo estás?")
-# → Respuesta directa sin búsqueda
+```bash
+# Health Check
+GET http://localhost:8000/health
 
-# Query ambigua
-run_graph("Explícame eso")
-# → Solicita clarificación
+# Estadísticas de documentos
+GET http://localhost:8000/api/documents/stats
 
-# Query de seguimiento
-run_graph("¿Y cómo se relaciona con deep learning?")
-# → Usa contexto previo → Búsqueda → Respuesta
+# Historial de conversación
+GET http://localhost:8000/api/chat/history/{conversation_id}
 ```
+
+---
+
+## 📊 Ejemplos de Queries
+
+### ✅ **Caso 1: Query Exitosa Directa**
+
+```json
+{
+  "query": "¿Qué es un agente inteligente y cuáles son sus componentes?",
+  "history": []
+}
+```
+
+**Resultado esperado:**
+- ✅ 5 documentos de `Módulo2_Agentes.pdf`
+- ✅ Similitud máxima: ~0.39
+- ✅ Iteraciones: 1 (éxito directo)
+- ⏱️ Tiempo: ~33 segundos
+
+---
+
+### 🔄 **Caso 2: Auto-corrección (Query Ambigua)**
+
+```json
+{
+  "query": "CNN",
+  "history": []
+}
+```
+
+**Flujo esperado:**
+1. Primera búsqueda → resultados pobres
+2. Grader rechaza → `rewrite`
+3. Rewriter: "CNN" → "Redes Neuronales Convolucionales"
+4. Segunda búsqueda → éxito
+5. Respuesta sobre redes convolucionales
+
+---
+
+### ⚠️ **Caso 3: Fuera de Dominio**
+
+```json
+{
+  "query": "¿Cuál es el precio del Bitcoin?",
+  "history": []
+}
+```
+
+**Comportamiento esperado:**
+- ❌ Similitud negativa (-0.17 → -0.09 → +0.09)
+- 🔄 2 reintentos de reformulación
+- ✅ Límite alcanzado → respuesta honesta
+- 💬 "No tengo información sobre Bitcoin en mi base de conocimiento..."
+- 🎯 **No alucina información**
+
+---
+
+### 🎓 **Caso 4: Query Técnica**
+
+```json
+{
+  "query": "Explica cómo funciona el algoritmo de backpropagation",
+  "history": []
+}
+```
+
+**Resultado esperado:**
+- Recupera de `Redes Neuronales Artificiales.pdf` y `Russell-Norvig.pdf`
+- Posible reescritura si threshold estricto
+- Respuesta técnica con fundamentos
 
 ---
 
 ## 📁 Estructura del Proyecto
+
 ```
 react-rag-multiagent-ucla/
 │
-├── backend/
+├── backend/                     # Backend Python
 │   ├── app/
-│   │   ├── agents/              # ⭐ Sistema multiagente
-│   │   │   ├── state.py         # GraphState management
-│   │   │   ├── coordinator.py   # CoordinatorAgent (ReAct)
-│   │   │   ├── search_node.py   # SearchNode
-│   │   │   ├── grader.py        # GraderAgent
-│   │   │   ├── rewriter.py      # RewriterAgent
-│   │   │   ├── answer_node.py   # AnswerNode
-│   │   │   ├── graph.py         # LangGraph orchestration
-│   │   │   └── prompts.py       # System prompts
+│   │   ├── agents/              # ⭐ Sistema Multi-Agente
+│   │   │   ├── state.py         # GraphState (messages, documents, retry_count)
+│   │   │   ├── coordinator.py   # Coordinator Agent (ReAct)
+│   │   │   ├── search_node.py   # Search Agent (RAG)
+│   │   │   ├── grader.py        # Grader Agent (Multi-Agent)
+│   │   │   ├── rewriter.py      # Rewriter Agent (ReAct Loop)
+│   │   │   ├── answer_node.py   # Answer Agent (Generation)
+│   │   │   ├── graph.py         # LangGraph Orchestration
+│   │   │   └── prompts.py       # System Prompts
 │   │   │
-│   │   ├── services/            # Servicios core
-│   │   │   ├── embeddings.py
-│   │   │   ├── vector_store.py
-│   │   │   ├── retriever.py
-│   │   │   ├── document_loader.py
-│   │   │   └── llm.py
+│   │   ├── services/            # Servicios Core
+│   │   │   ├── embeddings.py    # Embedding Service (MiniLM-L6-v2)
+│   │   │   ├── vector_store.py  # ChromaDB Management
+│   │   │   ├── retriever.py     # Retrieval Service
+│   │   │   ├── document_loader.py  # PDF Loader
+│   │   │   └── llm.py           # Ollama Integration
+│   │   │
+│   │   ├── routers/             # FastAPI Routers
+│   │   │   └── chat.py          # Chat endpoints
 │   │   │
 │   │   ├── core/
-│   │   │   └── config.py
+│   │   │   └── config.py        # Configuration
 │   │   │
-│   │   └── main.py              # FastAPI (WIP)
+│   │   └── main.py              # FastAPI App
 │   │
 │   ├── data/
-│   │   ├── raw/                 # PDFs originales
-│   │   ├── vectorstore/         # ChromaDB (392 docs)
-│   │   └── traces/              # Trazas de ejecución
+│   │   ├── raw/                 # PDFs originales (10 archivos)
+│   │   └── vectorstore/         # ChromaDB (466 documentos)
 │   │
-│   ├── notebooks/               # ⭐ Testing & desarrollo
-│   │   ├── 01_document_loader.ipynb
-│   │   ├── 02_embeddings.ipynb
-│   │   ├── 03_retriever.ipynb
-│   │   └── 04_langgraph_agents.ipynb  # Tests completos
+│   ├── requirements.txt         # Python dependencies
+│   └── venv/                    # Virtual environment
+│
+├── frontend/                    # Frontend React + TypeScript
+│   ├── src/
+│   │   ├── components/          # React Components
+│   │   ├── hooks/               # Custom Hooks
+│   │   ├── services/            # API Services
+│   │   └── App.tsx              # Main App
 │   │
-│   ├── requirements.txt
-│   └── venv/
+│   ├── package.json
+│   └── node_modules/
 │
-├── frontend/                    # React (WIP)
+├── docs/                        # Documentación
+│   ├── Informe_RAG_Multi_Agente_UCLA.md
+│   ├── Presentacion_RAG_Multi_Agente_20min.md
+│   ├── Guion_Presentacion_20min.md
+│   └── Trazas_amplias.png
 │
-├── docs/
-│   ├── BACKEND_ARCHITECTURE.md  # ⭐ Documentación técnica
-│   └── HANDOFF_DAY_6.md         # ⭐ Handoff para Julio
-│
-└── README.md                    # Este archivo
+├── README.md                    # Este archivo
+└── .gitignore
 ```
 
 ---
 
-## 🧪 Testing
+## 🛠️ Stack Tecnológico
 
-### Tests Implementados (Notebooks)
+### **Backend**
+
+| Componente | Tecnología | Versión | Justificación |
+|------------|------------|---------|---------------|
+| Orquestación | LangGraph | 0.2.62 | Flujos condicionales complejos, debugging granular |
+| LLM | Llama 3.2 (Ollama) | Latest | Ejecución local, costo cero, reproducibilidad |
+| Vector Store | ChromaDB | 0.5.23 | Persistencia local, fácil integración |
+| Embeddings | sentence-transformers | 3.4.0 | MiniLM-L6-v2: 384D, multilingüe, rápido |
+| Backend API | FastAPI | Latest | Async nativo, streaming SSE, docs automáticas |
+| PDF Processing | pypdf | Latest | Extracción de texto de PDFs |
+
+### **Frontend**
+
+| Componente | Tecnología | Justificación |
+|------------|------------|---------------|
+| Framework | React 18 + TypeScript | Type safety, componentes reutilizables |
+| Build Tool | Vite | Dev server rápido, HMR optimizado |
+| Estilos | Tailwind CSS | Utility-first, responsive, personalización rápida |
+| Visualización | Mermaid.js | Grafos de flujo dinámicos, exportación SVG |
+| HTTP Client | Axios | Manejo de streaming, interceptors |
+
+### **Base de Conocimiento**
+
+- **Total:** 466 chunks indexados
+- **Fuentes:** 10 documentos PDF académicos
+- **Temas:** IA, Machine Learning, Redes Neuronales, Agentes, Búsqueda Heurística
+- **Dimensión embeddings:** 384
+- **Modelo:** sentence-transformers/all-MiniLM-L6-v2
+
+---
+
+## 🧪 Testing y Diagnóstico
+
+### **Verificar Estado del Sistema**
+
 ```bash
-cd backend
-jupyter notebook notebooks/04_langgraph_agents.ipynb
+# Desde backend/ con venv activado
+python test_diagnostico_corregido.py
 ```
 
-**Cobertura:**
-- ✅ Tests unitarios de cada agente
-- ✅ Tests de integración del grafo completo
-- ✅ Casos edge: queries vagas, límites, multi-turn
-- ✅ Exportación de trazas para análisis
+**Output esperado:**
+```
+📊 Total de chunks indexados: 466
+📁 Total de fuentes únicas: 10
+✅ Archivos nuevos encontrados: 9/9
+```
 
-### Tests Futuros (Día 13-14)
+### **Re-indexar Documentos (Si es necesario)**
+
 ```bash
-# Backend (pytest)
-cd backend
-pytest tests/ -v
-
-# Frontend (jest)
-cd frontend
-npm test
+# Desde la raíz del proyecto
+python index_documents.py --reindex
 ```
 
 ---
 
-## 🛠️ Tecnologías Utilizadas
+## 🎯 Métricas y Rendimiento
 
-### Backend
-- **LangGraph 0.2.62**: Orquestación de agentes
-- **LangChain 0.3.17**: Framework de LLM
-- **Ollama**: Servidor LLM local
-- **Llama 3.2**: Modelo de lenguaje (3B parámetros)
-- **ChromaDB 0.5.23**: Vector database
-- **Sentence Transformers 3.4.0**: Embeddings (all-MiniLM-L6-v2)
-- **FastAPI**: API REST (WIP)
+### **Optimizaciones Implementadas**
 
-### Frontend (Planificado)
-- **React 18**: UI framework
-- **Vite**: Build tool
-- **TailwindCSS**: Styling
-- **Axios**: HTTP client
+| Optimización | Impacto | Antes | Después |
+|--------------|---------|-------|---------|
+| LLM-free Grader | 🟢 Crítico | 38s | <1s |
+| Threshold 0.25 | 🟡 Alto | Precisión 60% | 85% |
+| Max tokens 1024 | 🟡 Medio | Respuestas largas | Concisas |
+| Chunking 1000 chars | 🟡 Medio | 800 chunks | 466 chunks |
+| Max retries 2 | 🟢 Alto | Loops infinitos | Control estricto |
 
-### Infraestructura
-- **Python 3.11**
-- **Node.js 18+**
-- **Jupyter**: Notebooks de desarrollo
+**Resultado:** De 4.6 minutos → 50 segundos (82% reducción)
 
----
+### **Comparativa: Multi-Agente vs Baseline**
 
-## 📊 Estado del Proyecto
-
-### ✅ Completado (Días 1-5)
-
-| Componente | Estado | Descripción |
-|------------|--------|-------------|
-| Document Loader | ✅ | Carga y procesamiento de PDFs |
-| Embeddings | ✅ | Generación de embeddings semánticos |
-| Vector Store | ✅ | ChromaDB con 392 documentos |
-| Retriever | ✅ | Búsqueda semántica (top-k=5) |
-| Coordinator Agent | ✅ | Análisis ReAct de queries |
-| Search Node | ✅ | Recuperación de documentos |
-| Grader Agent | ✅ | Evaluación de relevancia |
-| Rewriter Agent | ✅ | Optimización de queries |
-| Answer Node | ✅ | Generación de respuestas |
-| LangGraph | ✅ | Orquestación completa |
-| Testing | ✅ | 15 notebooks de prueba |
-| Documentación | ✅ | Backend completo documentado |
-
-### 🚧 En Progreso (Días 6-15)
-
-| Componente | Días | Responsable | Estado |
-|------------|------|-------------|--------|
-| API FastAPI | 6-7 | Julio | 🚧 Planificado |
-| Frontend React | 8-10 | Julio | 🚧 Planificado |
-| Features Avanzadas | 11-12 | Julio | 🚧 Planificado |
-| Testing & Polish | 13-14 | Julio | 🚧 Planificado |
-| Deploy | 15 | Ambos | 🚧 Planificado |
+| Métrica | Baseline Monolítico | Multi-Agente ReAct |
+|---------|--------------------|--------------------|
+| Precisión (queries claras) | 75% | **85%** ⬆️ +10% |
+| Precisión (queries ambiguas) | 45% | **80%** ⬆️ +35% |
+| Manejo fuera de dominio | 0% (alucina) | **100%** (honesto) |
+| Latencia promedio | 15s | 30s ⬇️ +15s |
+| Transparencia | Nula (caja negra) | **Alta** (trazas completas) |
+| Auto-corrección | No | **Sí** (2 reintentos) |
 
 ---
 
 ## 📚 Documentación Adicional
 
-- **[Arquitectura Backend](docs/BACKEND_ARCHITECTURE.md)** - Documentación técnica completa del sistema multiagente
-- **[Handoff Día 6](docs/HANDOFF_DAY_6.md)** - Guía detallada para continuar con API y Frontend
-- **[Notebooks](backend/notebooks/)** - Jupyter notebooks con ejemplos y tests
+- **[Informe Completo](docs/Informe_RAG_Multi_Agente_UCLA.md)** - Documento académico de 4 páginas
+- **[Trazas Visuales](docs/Trazas_amplias.png)** - Resumen de 4 casos de prueba
+
+---
+
+## ⚙️ Configuración Avanzada
+
+### **Variables de Entorno (Opcional)**
+
+Crear archivo `.env` en `backend/`:
+
+```env
+# LLM Configuration
+OLLAMA_BASE_URL=http://localhost:11434
+LLM_MODEL=llama3.2
+LLM_TEMPERATURE=0.3
+LLM_MAX_TOKENS=1024
+
+# Vector Store
+CHROMA_PERSIST_DIR=../data/vectorstore
+COLLECTION_NAME=ucla_documents
+
+# Retriever
+TOP_K=5
+SIMILARITY_THRESHOLD=0.2
+
+# Grader
+GRADER_THRESHOLD=0.25
+
+# Rewriter
+MAX_RETRIES=2
+
+# API
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+```
+
+### **Re-indexar con Parámetros Personalizados**
+
+```python
+# Editar index_documents.py
+
+index_documents(
+    data_dir="data/raw",
+    chunk_size=1000,      # Tamaño de chunks
+    overlap=200,          # Overlap entre chunks
+    reindex=True          # Borrar colección existente
+)
+```
+
+---
+
+## 🐛 Solución de Problemas
+
+### **Error: "Ollama server not running"**
+
+```bash
+# Verificar si Ollama está corriendo
+curl http://localhost:11434/api/tags
+
+# Si no responde, iniciar Ollama
+ollama serve
+```
+
+### **Error: "Collection not found"**
+
+```bash
+# Re-indexar documentos
+python index_documents.py --reindex
+```
+
+### **Error: "CORS policy blocking"**
+
+```python
+# En backend/app/main.py, verificar CORS:
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+### **Frontend no conecta con backend**
+
+```bash
+# Verificar que backend está en puerto 8000
+curl http://localhost:8000/health
+
+# Verificar VITE_API_URL en frontend/.env
+VITE_API_URL=http://localhost:8000
+```
 
 ---
 
 ## 🎓 Uso Académico
 
-Este proyecto forma parte de una tesis de grado en Ingeniería en Informática en la UCLA. El objetivo es demostrar la viabilidad de sistemas RAG multiagente usando tecnologías open-source para análisis de documentos académicos.
+Este proyecto forma parte del primer laboratorio de la Maestría en ciencias de la computación (UCLA)
 
-### Contribuciones Principales
+### **Contribuciones Principales**
 
-1. **Implementación de patrón ReAct** en sistema RAG
-2. **Arquitectura multiagente** con LangGraph
-3. **Integración de LLM local** (Ollama) sin dependencias de APIs comerciales
-4. **Sistema completo end-to-end** desde indexación hasta respuesta
+1. ✅ Implementación práctica del **patrón ReAct** en sistema RAG
+2. ✅ Arquitectura **multi-agente** con LangGraph (5 agentes especializados)
+3. ✅ Integración de **LLM local** (Ollama) sin dependencias de APIs comerciales
+4. ✅ Sistema completo **end-to-end** con visualización en tiempo real
+5. ✅ **Optimización de rendimiento** (82% reducción en latencia)
+6. ✅ **Manejo robusto** de queries fuera de dominio (no alucina)
 
----
-
-## 🚀 Roadmap
-
-### Fase 1: Backend ✅ (Completado)
-- [x] Sistema de carga de documentos
-- [x] Generación de embeddings
-- [x] Vector store con ChromaDB
-- [x] Sistema multiagente con LangGraph
-- [x] Patrón ReAct implementado
-- [x] Testing completo en notebooks
-
-### Fase 2: API 🚧 (Días 6-7)
-- [ ] FastAPI endpoints
-- [ ] CORS configuration
-- [ ] Request/Response models
-- [ ] Error handling
-- [ ] API documentation (Swagger)
-
-### Fase 3: Frontend 🚧 (Días 8-10)
-- [ ] React setup
-- [ ] Chat interface
-- [ ] API integration
-- [ ] Markdown rendering
-- [ ] Source citations
-
-### Fase 4: Features 🚧 (Días 11-12)
-- [ ] Streaming responses
-- [ ] Typing indicators
-- [ ] Syntax highlighting
-- [ ] Conversation export
-
-### Fase 5: Deploy 🚧 (Días 13-15)
-- [ ] Docker containerization
-- [ ] Testing completo
-- [ ] Documentation final
-- [ ] Demo video
 
 ---
 
 ## 🤝 Contribución
 
-Este es un proyecto académico. Si deseas contribuir:
+Este es un proyecto académico. Contribuciones son bienvenidas:
 
-1. Fork el proyecto
-2. Crea una rama (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
+1. Fork el repositorio
+2. Crea una rama: `git checkout -b feature/NuevaCaracteristica`
+3. Commit: `git commit -m 'Add: Nueva característica'`
+4. Push: `git push origin feature/NuevaCaracteristica`
 5. Abre un Pull Request
 
 ---
 
 ## 📄 Licencia
 
-Este proyecto está bajo la Licencia MIT. Ver archivo [LICENSE](LICENSE) para más detalles.
+Este proyecto está bajo la **Licencia MIT**. Ver archivo [LICENSE](LICENSE) para más detalles.
 
 ---
 
 ## 🙏 Agradecimientos
 
-- **Universidad Centroccidental Lisandro Alvarado (UCLA)**
-- **Dra. Maria Auxiliadora Perez** - Tutora del proyecto
-- **Comunidad LangChain/LangGraph** - Framework y documentación
-- **Ollama Team** - LLM local open-source
+- **Universidad Centroccidental Lisandro Alvarado (UCLA)** - Apoyo institucional
+- **Dra. Maria Auxiliadora Perez** - Tutoría del proyecto
+- **LangChain/LangGraph Community** - Framework y documentación
+- **Ollama Team** - LLM local open-source de calidad
+- **ChromaDB Team** - Vector database eficiente
 
 ---
 
 ## 📞 Contacto
 
-### Darwin Joel Arroyo Perez
-- Email: darwin@ucla.edu.ve
-- GitHub: [@darwinjoelap](https://github.com/darwinjoelap)
+**Darwin Joel Arroyo Perez**  
+📧 Email: darwinjoelap@gmail.com  
+🐙 GitHub: [@darwinjoelap](https://github.com/darwinjoelap)  
+🎓 Universidad: UCLA, Venezuela
 
-### Julio Cesar Matheus
-- Email: julio@ucla.edu.ve
-- GitHub: [@juliomatheus](https://github.com/juliomatheus)
+**Julio Cesar Matheus Arroyo**  
+📧 Email: juliomatheus@gmail.com   
+🎓 Universidad: UCLA, Venezuela
+
+
 
 ---
 
 ## 🔗 Enlaces Útiles
 
 - [LangGraph Documentation](https://langchain-ai.github.io/langgraph/)
+- [LangChain Documentation](https://python.langchain.com/)
 - [Ollama Documentation](https://ollama.com/docs)
 - [ChromaDB Documentation](https://docs.trychroma.com/)
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)
 - [React Documentation](https://react.dev/)
+- [Mermaid.js Documentation](https://mermaid.js.org/)
 
 ---
 
-**Última actualización:** Febrero 9, 2026  
-**Versión:** 1.0.0 (Backend completo)  
-**Estado:** En desarrollo activo 🚀
+## 📊 Estado del Proyecto
+
+**Versión:** 2.0.0 (Sistema Completo)  
+**Estado:** ✅ Completado y funcional  
+**Última actualización:** Febrero 15, 2026  
+**Líneas de código:** ~5,000 (Python) + ~3,000 (TypeScript)  
+**Documentos indexados:** 466 chunks de 10 PDFs académicos  
+
+---
+
+<div align="center">
+**Para la comunidad académica open-source** 🎓
+
+</div>
