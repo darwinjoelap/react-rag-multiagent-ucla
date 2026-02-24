@@ -58,6 +58,15 @@ class AnswerNode:
                 thought = "Solicitando aclaración al usuario"
                 logger.info("Respuesta tipo clarify generada")
             
+            # ========== FIX: Respuesta directa para queries fuera de dominio ==========
+            elif action_input == "out_of_domain":
+                final_answer = ("Lo siento, no tengo información sobre ese tema en mi base de conocimiento. "
+                               "Mi dominio se limita a temas de Inteligencia Artificial, Machine Learning, "
+                               "Redes Neuronales y Agentes Inteligentes. ¿Puedo ayudarte con alguno de estos temas?")
+                thought = "Query fuera de dominio - respuesta directa sin documentos"
+                logger.info("Respuesta fuera de dominio generada directamente")
+            # =========================================================================
+            
             # ========== MODIFICADO: Usar format_answer_prompt con multi-turno ==========
             else:
                 # Usar el prompt del archivo prompts.py que incluye historial
